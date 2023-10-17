@@ -229,11 +229,14 @@ func getHostServiceList(ctx context.Context, host *object.HostSystem) ([]types.H
 	return nil, fmt.Errorf("could not obtain config manager for host %s", host.Name())
 }
 
-func GetServiceState(ctx context.Context, host *object.HostSystem, serviceKey HostServiceKey) (map[string]interface{}, error) {
+func GetServiceState(host *object.HostSystem, timeout time.Duration, serviceKey HostServiceKey) (map[string]interface{}, error) {
 	if host.ConfigManager() != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
 		hss, err := host.ConfigManager().ServiceSystem(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("error while trying to obtain host service system %s.  Error: %s", host.Name(), err)
+			return nil, fmt.Errorf("error while trying to obtain host service system for host %s.  Error: %s", host.Name(), err)
 		}
 
 		hsList, err := hss.Service(ctx)
@@ -269,7 +272,7 @@ func SetServiceState(host *object.HostSystem, timeout time.Duration, serviceKey 
 
 		hss, err := host.ConfigManager().ServiceSystem(ctx)
 		if err != nil {
-			return fmt.Errorf("error while trying to obtain host service system %s.  Error: %s", host.Name(), err)
+			return fmt.Errorf("error while trying to obtain host service system for host %s.  Error: %s", host.Name(), err)
 		}
 
 		ss := ssList[0]
@@ -279,18 +282,18 @@ func SetServiceState(host *object.HostSystem, timeout time.Duration, serviceKey 
 
 			if running {
 				if err = hss.Start(ctx, string(serviceKey)); err != nil {
-					return fmt.Errorf("error while trying to start ssh service for host %s.  Error: %s", host.Name(), err)
+					return fmt.Errorf("error while trying to start %s service for host %s.  Error: %s", serviceKey, host.Name(), err)
 				}
 			} else {
 				if err = hss.Stop(ctx, string(serviceKey)); err != nil {
-					return fmt.Errorf("error while trying to stop ssh service for host %s.  Error: %s", host.Name(), err)
+					return fmt.Errorf("error while trying to stop %s service for host %s.  Error: %s", serviceKey, host.Name(), err)
 				}
 			}
 		}
 
 		if p, ok := ss["policy"]; ok {
 			if err = hss.UpdatePolicy(ctx, string(serviceKey), p.(string)); err != nil {
-				return fmt.Errorf("error while trying to update policy for ssh service for host %s.  Error: %s", host.Name(), err)
+				return fmt.Errorf("error while trying to update policy for %s service for host %s.  Error: %s", serviceKey, host.Name(), err)
 			}
 		}
 	}

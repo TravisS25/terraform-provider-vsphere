@@ -26,16 +26,6 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
-var (
-	defaultHostServicePolicy types.HostServicePolicy = types.HostServicePolicyOff
-)
-
-var hostServicePolicyAllowedValues = []string{
-	string(types.HostServicePolicyOn),
-	string(types.HostServicePolicyOff),
-	string(types.HostServicePolicyAutomatic),
-}
-
 func resourceVsphereHost() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceVsphereHostCreate,
@@ -129,14 +119,21 @@ func resourceVsphereHost() *schema.Resource {
 							Type:        schema.TypeBool,
 							Optional:    true,
 							Default:     false,
-							Description: "Determines whether the ssh service should be on or off",
+							Description: "Determines whether the ssh service should be on or off.  Default: 'off'",
 						},
 						"policy": {
-							Type:         schema.TypeString,
-							Optional:     true,
-							Default:      defaultHostServicePolicy,
-							Description:  "The policy of the ssh service.  Valid options are 'on', 'off', or 'automatic'.  Default: 'off'",
-							ValidateFunc: validation.StringInSlice(hostServicePolicyAllowedValues, false),
+							Type:        schema.TypeString,
+							Optional:    true,
+							Default:     types.HostServicePolicyOff,
+							Description: "The policy of the ssh service.  Valid options are 'on', 'off', or 'automatic'.  Default: 'off'",
+							ValidateFunc: validation.StringInSlice(
+								[]string{
+									string(types.HostServicePolicyOn),
+									string(types.HostServicePolicyOff),
+									string(types.HostServicePolicyAutomatic),
+								},
+								false,
+							),
 						},
 					},
 				},
@@ -305,8 +302,18 @@ func resourceVsphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if srvVal, ok := d.GetOk("ssh_service"); ok {
-		if err = hostsystem.SetServiceState(host, provider.DefaultAPITimeout, hostsystem.HostServiceKeySSH, srvVal.([]map[string]interface{})); err != nil {
-			return err
+		if err = hostsystem.SetServiceState(
+			host,
+			provider.DefaultAPITimeout,
+			hostsystem.HostServiceKeySSH,
+			srvVal.([]map[string]interface{}),
+		); err != nil {
+			return fmt.Errorf(
+				"error while trying to set state for sevice %s for host %s.  Error: %s",
+				hostsystem.HostServiceKeySSH,
+				host.Name(),
+				err,
+			)
 		}
 	}
 
@@ -400,10 +407,14 @@ func resourceVsphereHostRead(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if _, ok := d.GetOk("ssh_service"); ok {
-		ctx := context.TODO()
-		ss, err := hostsystem.GetServiceState(ctx, hs, hostsystem.HostServiceKeySSH)
+		ss, err := hostsystem.GetServiceState(hs, provider.DefaultAPITimeout, hostsystem.HostServiceKeySSH)
 		if err != nil {
-			return err
+			return fmt.Errorf(
+				"error while trying to retrieve current state for service %s for host %s.  Error: %s",
+				hostsystem.HostServiceKeySSH,
+				hs.Name(),
+				err,
+			)
 		}
 
 		d.Set("ssh_service", []interface{}{ss})
@@ -725,7 +736,20 @@ func resourceVSphereHostDisconnect(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceVSphereHostUpdateSSHService(d *schema.ResourceData, meta, _, newVal interface{}) error {
+	client := meta.(*Client).vimClient
+	host := object.NewHostSystem(client.Client, types.ManagedObjectReference{Type: "HostSystem", Value: d.Id()})
 
+	err := hostsystem.SetServiceState(host, provider.DefaultAPITimeout, hostsystem.HostServiceKeySSH, newVal.([]map[string]interface{}))
+	if err != nil {
+		return fmt.Errorf(
+			"error while trying to set state for sevice %s for host %s.  Error: %s",
+			hostsystem.HostServiceKeySSH,
+			host.Name(),
+			err,
+		)
+	}
+
+	return nil
 }
 
 func shouldReconnect(_ *schema.ResourceData, _ interface{}, actual types.HostSystemConnectionState, desired, shouldReconnect bool) (int, error) {
