@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
@@ -16,6 +17,12 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+)
+
+type HostServiceKey string
+
+const (
+	HostServiceKeySSH HostServiceKey = "tsm-ssh"
 )
 
 // SystemOrDefault returns a HostSystem from a specific host name and
@@ -201,4 +208,92 @@ func GetConnectionState(host *object.HostSystem) (types.HostSystemConnectionStat
 	}
 
 	return hostProps.Runtime.ConnectionState, nil
+}
+
+// getHostServiceList is helper function for retrieving a list of host services from given host
+func getHostServiceList(ctx context.Context, host *object.HostSystem) ([]types.HostService, error) {
+	if host.ConfigManager() != nil {
+		hss, err := host.ConfigManager().ServiceSystem(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error while trying to obtain host service system %s.  Error: %s", host.Name(), err)
+		}
+
+		hsList, err := hss.Service(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error while trying to obtain list of host services for host %s.  Error: %s", host.Name(), err)
+		}
+
+		return hsList, nil
+	}
+
+	return nil, fmt.Errorf("could not obtain config manager for host %s", host.Name())
+}
+
+func GetServiceState(ctx context.Context, host *object.HostSystem, serviceKey HostServiceKey) (map[string]interface{}, error) {
+	if host.ConfigManager() != nil {
+		hss, err := host.ConfigManager().ServiceSystem(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error while trying to obtain host service system %s.  Error: %s", host.Name(), err)
+		}
+
+		hsList, err := hss.Service(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error while trying to obtain list of host services for host %s.  Error: %s", host.Name(), err)
+		}
+
+		for _, hostSrv := range hsList {
+			if strings.EqualFold(hostSrv.Key, string(serviceKey)) {
+				ss := map[string]interface{}{
+					"key": hostSrv.Key,
+				}
+				ss["policy"] = hostSrv.Policy
+
+				if hostSrv.Running {
+					ss["running"] = true
+				} else {
+					ss["running"] = false
+				}
+
+				return ss, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("could not obtain config manager for host %s", host.Name())
+}
+
+func SetServiceState(host *object.HostSystem, timeout time.Duration, serviceKey HostServiceKey, ssList []map[string]interface{}) error {
+	if host.ConfigManager() != nil && len(ssList) > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		hss, err := host.ConfigManager().ServiceSystem(ctx)
+		if err != nil {
+			return fmt.Errorf("error while trying to obtain host service system %s.  Error: %s", host.Name(), err)
+		}
+
+		ss := ssList[0]
+
+		if r, ok := ss["running"]; ok {
+			running := r.(bool)
+
+			if running {
+				if err = hss.Start(ctx, string(serviceKey)); err != nil {
+					return fmt.Errorf("error while trying to start ssh service for host %s.  Error: %s", host.Name(), err)
+				}
+			} else {
+				if err = hss.Stop(ctx, string(serviceKey)); err != nil {
+					return fmt.Errorf("error while trying to stop ssh service for host %s.  Error: %s", host.Name(), err)
+				}
+			}
+		}
+
+		if p, ok := ss["policy"]; ok {
+			if err = hss.UpdatePolicy(ctx, string(serviceKey), p.(string)); err != nil {
+				return fmt.Errorf("error while trying to update policy for ssh service for host %s.  Error: %s", host.Name(), err)
+			}
+		}
+	}
+
+	return nil
 }

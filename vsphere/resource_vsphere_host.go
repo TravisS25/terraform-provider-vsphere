@@ -26,6 +26,16 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
+var (
+	defaultHostServicePolicy types.HostServicePolicy = types.HostServicePolicyOff
+)
+
+var hostServicePolicyAllowedValues = []string{
+	string(types.HostServicePolicyOn),
+	string(types.HostServicePolicyOff),
+	string(types.HostServicePolicyAutomatic),
+}
+
 func resourceVsphereHost() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceVsphereHostCreate,
@@ -103,6 +113,33 @@ func resourceVsphereHost() *schema.Resource {
 				Description:  "Set the host's lockdown status. Default is disabled. Valid options are 'disabled', 'normal', 'strict'",
 				Default:      "disabled",
 				ValidateFunc: validation.StringInSlice([]string{"disabled", "normal", "strict"}, true),
+			},
+			"ssh_service": {
+				Type:     schema.TypeList,
+				Optional: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"key": {
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: "The key id of the ssh service",
+						},
+						"running": {
+							Type:        schema.TypeBool,
+							Optional:    true,
+							Default:     false,
+							Description: "Determines whether the ssh service should be on or off",
+						},
+						"policy": {
+							Type:         schema.TypeString,
+							Optional:     true,
+							Default:      defaultHostServicePolicy,
+							Description:  "The policy of the ssh service.  Valid options are 'on', 'off', or 'automatic'.  Default: 'off'",
+							ValidateFunc: validation.StringInSlice(hostServicePolicyAllowedValues, false),
+						},
+					},
+				},
 			},
 
 			// Tagging
@@ -267,6 +304,12 @@ func resourceVsphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("error while toggling maintenance mode for host %s. Error: %s", hostID, err)
 	}
 
+	if srvVal, ok := d.GetOk("ssh_service"); ok {
+		if err = hostsystem.SetServiceState(host, provider.DefaultAPITimeout, hostsystem.HostServiceKeySSH, srvVal.([]map[string]interface{})); err != nil {
+			return err
+		}
+	}
+
 	return resourceVsphereHostRead(d, meta)
 }
 
@@ -356,6 +399,16 @@ func resourceVsphereHostRead(d *schema.ResourceData, meta interface{}) error {
 		customattribute.ReadFromResource(moHost.Entity(), d)
 	}
 
+	if _, ok := d.GetOk("ssh_service"); ok {
+		ctx := context.TODO()
+		ss, err := hostsystem.GetServiceState(ctx, hs, hostsystem.HostServiceKeySSH)
+		if err != nil {
+			return err
+		}
+
+		d.Set("ssh_service", []interface{}{ss})
+	}
+
 	return nil
 }
 
@@ -434,6 +487,7 @@ func resourceVsphereHostUpdate(d *schema.ResourceData, meta interface{}) error {
 		"maintenance": resourceVSphereHostUpdateMaintenanceMode,
 		"lockdown":    resourceVSphereHostUpdateLockdownMode,
 		"thumbprint":  resourceVSphereHostUpdateThumbprint,
+		"ssh_service": resourceVSphereHostUpdateSSHService,
 	}
 	for k, v := range mutableKeys {
 		log.Printf("[DEBUG] Checking if key %s changed", k)
@@ -668,6 +722,10 @@ func resourceVSphereHostDisconnect(d *schema.ResourceData, meta interface{}) err
 		return fmt.Errorf("error while disconnecting host(%s): %s", hostID, err)
 	}
 	return nil
+}
+
+func resourceVSphereHostUpdateSSHService(d *schema.ResourceData, meta, _, newVal interface{}) error {
+
 }
 
 func shouldReconnect(_ *schema.ResourceData, _ interface{}, actual types.HostSystemConnectionState, desired, shouldReconnect bool) (int, error) {
