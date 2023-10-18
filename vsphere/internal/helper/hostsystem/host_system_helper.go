@@ -22,7 +22,7 @@ import (
 type HostServiceKey string
 
 const (
-	HostServiceKeySSH HostServiceKey = "tsm-ssh"
+	HostServiceKeySSH HostServiceKey = "TSM-SSH"
 )
 
 // SystemOrDefault returns a HostSystem from a specific host name and
@@ -210,25 +210,6 @@ func GetConnectionState(host *object.HostSystem) (types.HostSystemConnectionStat
 	return hostProps.Runtime.ConnectionState, nil
 }
 
-// getHostServiceList is helper function for retrieving a list of host services from given host
-func getHostServiceList(ctx context.Context, host *object.HostSystem) ([]types.HostService, error) {
-	if host.ConfigManager() != nil {
-		hss, err := host.ConfigManager().ServiceSystem(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("error while trying to obtain host service system %s.  Error: %s", host.Name(), err)
-		}
-
-		hsList, err := hss.Service(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("error while trying to obtain list of host services for host %s.  Error: %s", host.Name(), err)
-		}
-
-		return hsList, nil
-	}
-
-	return nil, fmt.Errorf("could not obtain config manager for host %s", host.Name())
-}
-
 func GetServiceState(host *object.HostSystem, timeout time.Duration, serviceKey HostServiceKey) (map[string]interface{}, error) {
 	if host.ConfigManager() != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -247,9 +228,9 @@ func GetServiceState(host *object.HostSystem, timeout time.Duration, serviceKey 
 		for _, hostSrv := range hsList {
 			if strings.EqualFold(hostSrv.Key, string(serviceKey)) {
 				ss := map[string]interface{}{
-					"key": hostSrv.Key,
+					"key":    hostSrv.Key,
+					"policy": hostSrv.Policy,
 				}
-				ss["policy"] = hostSrv.Policy
 
 				if hostSrv.Running {
 					ss["running"] = true
@@ -265,8 +246,8 @@ func GetServiceState(host *object.HostSystem, timeout time.Duration, serviceKey 
 	return nil, fmt.Errorf("could not obtain config manager for host %s", host.Name())
 }
 
-func SetServiceState(host *object.HostSystem, timeout time.Duration, serviceKey HostServiceKey, ssList []map[string]interface{}) error {
-	if host.ConfigManager() != nil && len(ssList) > 0 {
+func SetServiceState(host *object.HostSystem, timeout time.Duration, serviceKey HostServiceKey, ssList []interface{}) error {
+	if host.ConfigManager() != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
@@ -275,28 +256,39 @@ func SetServiceState(host *object.HostSystem, timeout time.Duration, serviceKey 
 			return fmt.Errorf("error while trying to obtain host service system for host %s.  Error: %s", host.Name(), err)
 		}
 
-		ss := ssList[0]
+		if len(ssList) > 0 {
+			ss := ssList[0].(map[string]interface{})
 
-		if r, ok := ss["running"]; ok {
-			running := r.(bool)
+			if r, ok := ss["running"]; ok {
+				running := r.(bool)
 
-			if running {
-				if err = hss.Start(ctx, string(serviceKey)); err != nil {
-					return fmt.Errorf("error while trying to start %s service for host %s.  Error: %s", serviceKey, host.Name(), err)
-				}
-			} else {
-				if err = hss.Stop(ctx, string(serviceKey)); err != nil {
-					return fmt.Errorf("error while trying to stop %s service for host %s.  Error: %s", serviceKey, host.Name(), err)
+				if running {
+					if err = hss.Start(ctx, string(serviceKey)); err != nil {
+						return fmt.Errorf("error while trying to start %s service for host %s.  Error: %s", serviceKey, host.Name(), err)
+					}
+				} else {
+					if err = hss.Stop(ctx, string(serviceKey)); err != nil {
+						return fmt.Errorf("error while trying to stop %s service for host %s.  Error: %s", serviceKey, host.Name(), err)
+					}
 				}
 			}
-		}
 
-		if p, ok := ss["policy"]; ok {
-			if err = hss.UpdatePolicy(ctx, string(serviceKey), p.(string)); err != nil {
+			if p, ok := ss["policy"]; ok {
+				if err = hss.UpdatePolicy(ctx, string(serviceKey), p.(string)); err != nil {
+					return fmt.Errorf("error while trying to update policy for %s service for host %s.  Error: %s", serviceKey, host.Name(), err)
+				}
+			}
+		} else {
+			if err = hss.Stop(ctx, string(serviceKey)); err != nil {
+				return fmt.Errorf("error while trying to stop %s service for host %s.  Error: %s", serviceKey, host.Name(), err)
+			}
+			if err = hss.UpdatePolicy(ctx, string(serviceKey), string(types.HostServicePolicyOff)); err != nil {
 				return fmt.Errorf("error while trying to update policy for %s service for host %s.  Error: %s", serviceKey, host.Name(), err)
 			}
 		}
+
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("could not obtain config manager for host %s to set state for service %s", host.Name(), serviceKey)
 }

@@ -306,14 +306,9 @@ func resourceVsphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 			host,
 			provider.DefaultAPITimeout,
 			hostsystem.HostServiceKeySSH,
-			srvVal.([]map[string]interface{}),
+			srvVal.([]interface{}),
 		); err != nil {
-			return fmt.Errorf(
-				"error while trying to set state for sevice %s for host %s.  Error: %s",
-				hostsystem.HostServiceKeySSH,
-				host.Name(),
-				err,
-			)
+			return err
 		}
 	}
 
@@ -409,12 +404,7 @@ func resourceVsphereHostRead(d *schema.ResourceData, meta interface{}) error {
 	if _, ok := d.GetOk("ssh_service"); ok {
 		ss, err := hostsystem.GetServiceState(hs, provider.DefaultAPITimeout, hostsystem.HostServiceKeySSH)
 		if err != nil {
-			return fmt.Errorf(
-				"error while trying to retrieve current state for service %s for host %s.  Error: %s",
-				hostsystem.HostServiceKeySSH,
-				hs.Name(),
-				err,
-			)
+			return err
 		}
 
 		d.Set("ssh_service", []interface{}{ss})
@@ -736,17 +726,17 @@ func resourceVSphereHostDisconnect(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceVSphereHostUpdateSSHService(d *schema.ResourceData, meta, _, newVal interface{}) error {
+	log.Printf("[DEBUG] hittng the ssh update service")
 	client := meta.(*Client).vimClient
 	host := object.NewHostSystem(client.Client, types.ManagedObjectReference{Type: "HostSystem", Value: d.Id()})
 
-	err := hostsystem.SetServiceState(host, provider.DefaultAPITimeout, hostsystem.HostServiceKeySSH, newVal.([]map[string]interface{}))
-	if err != nil {
-		return fmt.Errorf(
-			"error while trying to set state for sevice %s for host %s.  Error: %s",
-			hostsystem.HostServiceKeySSH,
-			host.Name(),
-			err,
-		)
+	if err := hostsystem.SetServiceState(
+		host,
+		provider.DefaultAPITimeout,
+		hostsystem.HostServiceKeySSH,
+		newVal.([]interface{}),
+	); err != nil {
+		return err
 	}
 
 	return nil
