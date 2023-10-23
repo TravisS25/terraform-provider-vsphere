@@ -192,6 +192,19 @@ func TestAccClient_noPersistence(t *testing.T) {
 	testAccClientCheckStatNoExist(t, vimSessionFile)
 }
 
+func TestAccClient_license(t *testing.T) {
+	testAccClientPreCheck(t)
+	testAccCheckEnvVariables(t, []string{"TF_VAR_VSPHERE_LICENSE"})
+
+	c := testAccClientGenerateConfig()
+	c.LicenseKey = os.Getenv("TF_VAR_VSPHERE_LICENSE")
+
+	_, err := c.Client()
+	if err != nil {
+		t.Fatalf("error setting up client: %s", err)
+	}
+}
+
 func TestNewConfig(t *testing.T) {
 	expected := &Config{
 		User:           "foo",
