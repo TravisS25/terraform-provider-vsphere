@@ -274,10 +274,6 @@ func (c *Config) applyVCenterLicense(client *govmomi.Client) error {
 		if _, err = lam.Update(ctx, client.ServiceContent.About.InstanceUuid, c.LicenseKey, ""); err != nil {
 			return fmt.Errorf("error trying to update license key for vcenter host %s: %s", c.VSphereServer, err)
 		}
-	} else {
-		if err = lam.Remove(ctx, client.ServiceContent.About.InstanceUuid); err != nil {
-			return fmt.Errorf("error trying to remove license key for vcenter host %s: %s", c.VSphereServer, err)
-		}
 	}
 
 	return nil

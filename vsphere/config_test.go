@@ -4,6 +4,8 @@
 package vsphere
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"os"
 	"reflect"
@@ -11,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/vmware/govmomi/license"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -61,6 +64,11 @@ func init() {
 		Dependencies: nil,
 		F:            ccSweep,
 	})
+	resource.AddTestSweepers("vcenter", &resource.Sweeper{
+		Name:         "vcenter_cleanup",
+		Dependencies: nil,
+		F:            vcenterSweep,
+	})
 }
 
 func testAccClientPreCheck(t *testing.T) {
@@ -68,6 +76,21 @@ func testAccClientPreCheck(t *testing.T) {
 		t.Skip("set TF_ACC to run vsphere_virtual_machine state migration tests (provider connection is required)")
 	}
 	testAccPreCheck(t)
+}
+
+func testAccClientRemoveVcenterLicense(client *Client) error {
+	ctx := context.Background()
+	lam, err := license.NewManager(client.vimClient.Client).AssignmentManager(ctx)
+
+	if err != nil {
+		return fmt.Errorf("error trying to retrieve license assignment: %s", err)
+	}
+
+	if err = lam.Remove(ctx, client.vimClient.ServiceContent.About.InstanceUuid); err != nil {
+		return fmt.Errorf("error trying to remove license from vcenter: %s", err)
+	}
+
+	return nil
 }
 
 func testAccClientGenerateConfig() *Config {
@@ -199,9 +222,13 @@ func TestAccClient_license(t *testing.T) {
 	c := testAccClientGenerateConfig()
 	c.LicenseKey = os.Getenv("TF_VAR_VSPHERE_LICENSE")
 
-	_, err := c.Client()
+	client, err := c.Client()
 	if err != nil {
 		t.Fatalf("error setting up client: %s", err)
+	}
+
+	if err = testAccClientRemoveVcenterLicense(client); err != nil {
+		t.Fatalf(err.Error())
 	}
 }
 
