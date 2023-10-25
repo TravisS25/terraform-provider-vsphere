@@ -203,6 +203,8 @@ func TestAccResourceVSphereHost_emptyLicense(t *testing.T) {
 	})
 }
 
+// NOTE: This test has currently not been tested/run as we don't want to destroy the host
+// on cleanup with current setup, will test later with another environment
 func TestAccResourceVSphereHost_sshService(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
