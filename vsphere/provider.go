@@ -151,6 +151,7 @@ func Provider() *schema.Provider {
 			"vsphere_entity_permissions":                      resourceVsphereEntityPermissions(),
 			"vsphere_host_service_state":                      resourceVsphereHostServiceState(),
 			"vsphere_iscsi_software_adapter":                  resourceVSphereIscsiSoftwareAdapter(),
+			"vsphere_iscsi_target":                            resourceVSphereIscsiTarget(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
