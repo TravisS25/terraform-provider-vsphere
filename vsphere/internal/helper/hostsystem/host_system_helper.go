@@ -72,6 +72,16 @@ func Properties(host *object.HostSystem) (*mo.HostSystem, error) {
 	return &props, nil
 }
 
+func HostStorageSystemProperties(hss *object.HostStorageSystem) (*mo.HostStorageSystem, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
+	defer cancel()
+	var props mo.HostStorageSystem
+	if err := hss.Properties(ctx, hss.Reference(), nil, &props); err != nil {
+		return nil, err
+	}
+	return &props, nil
+}
+
 // ResourcePool is a convenience method that wraps fetching the host system's
 // root resource pool
 func ResourcePool(host *object.HostSystem) (*object.ResourcePool, error) {
