@@ -5,6 +5,7 @@ package vsphere
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"context"
@@ -20,16 +21,17 @@ import (
 
 const (
 	iscsiAdapterName = "internetscsihba"
+	iscsiIDName      = "%s:iscsi-software-adapter"
 )
 
 func resourceVSphereIscsiSoftwareAdapter() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceVSphereDatacenterCreate,
-		Read:   resourceVSphereDatacenterRead,
-		Update: resourceVSphereDatacenterUpdate,
-		Delete: resourceVSphereDatacenterDelete,
+		Create: resourceVSphereIscsiSoftwareAdapterCreate,
+		Read:   resourceVSphereIscsiSoftwareAdapterRead,
+		Update: resourceVSphereIscsiSoftwareAdapterUpdate,
+		Delete: resourceVSphereIscsiSoftwareAdapterDelete,
 		Importer: &schema.ResourceImporter{
-			State: resourceVSphereDatacenterImport,
+			State: resourceVSphereIscsiSoftwareAdapterImport,
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -42,6 +44,7 @@ func resourceVSphereIscsiSoftwareAdapter() *schema.Resource {
 			"enabled": {
 				Type:        schema.TypeBool,
 				Default:     true,
+				Optional:    true,
 				Description: "Determines whether to enable iscsi software adpater.  Default: true",
 			},
 			"iscsi_name": {
@@ -73,6 +76,10 @@ func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta inte
 		return fmt.Errorf("error while searching host %s: %s ", hostID, err)
 	}
 
+	id := fmt.Sprintf(iscsiIDName, hs.Reference().Value)
+	log.Printf("[DEBUG] setting iscsi id: %s", id)
+	d.SetId(id)
+
 	hsProps, err := hostsystem.Properties(hs)
 	if err != nil {
 		return fmt.Errorf("error trying to retrieve host system properties: %s", err)
@@ -98,24 +105,32 @@ func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta inte
 	}
 
 	if enabled {
-		if name, ok := d.GetOk("iscsi_name"); ok {
-			for _, v := range hssProps.StorageDeviceInfo.HostBusAdapter {
-				if strings.Contains(strings.ToLower(v.GetHostHostBusAdapter().Key), iscsiAdapterName) {
-					fmt.Printf("found the adapter name!\n")
+		for _, v := range hssProps.StorageDeviceInfo.HostBusAdapter {
+			if strings.Contains(strings.ToLower(v.GetHostHostBusAdapter().Key), iscsiAdapterName) {
+				hba := v.(*types.HostInternetScsiHba)
 
+				if name, ok := d.GetOk("iscsi_name"); ok {
 					if _, err = methods.UpdateInternetScsiName(context.Background(), client.Client, &types.UpdateInternetScsiName{
 						This:           hss.Reference(),
-						IScsiHbaDevice: v.GetHostHostBusAdapter().Device,
+						IScsiHbaDevice: hba.Device,
 						IScsiName:      name.(string),
 					}); err != nil {
 						return fmt.Errorf("could not update iscsi name: %s", err)
 					}
+
+					d.Set("iscsi_name", name.(string))
+					log.Printf("[DEBUG] setting iscsi name from user: %s", name.(string))
+				} else {
+					log.Printf("[DEBUG] setting iscsi name from vmware: %s", hba.IScsiName)
+					d.Set("iscsi_name", hba.IScsiName)
 				}
 			}
 		}
 	}
 
-	return resourceVSphereDatacenterRead(d, meta)
+	log.Printf("[DEBUG] at the end of iscsi create function")
+
+	return resourceVSphereIscsiSoftwareAdapterRead(d, meta)
 }
 
 func resourceVSphereIscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}) error {
@@ -153,6 +168,8 @@ func resourceVSphereIscsiSoftwareAdapterRead(d *schema.ResourceData, meta interf
 			}
 		}
 	}
+
+	log.Printf("[DEBUG] at the end of iscsi read function")
 
 	return nil
 }
@@ -195,27 +212,29 @@ func resourceVSphereIscsiSoftwareAdapterUpdate(d *schema.ResourceData, meta inte
 		); err != nil {
 			return fmt.Errorf("error while trying to enable/disable iscsi software adapter: %s", err)
 		}
+	}
 
-		if enabledVal.(bool) && d.HasChange("iscsi_name") {
-			_, iscsiName := d.GetChange("iscsi_name")
+	enabledVal := d.Get("enabled").(bool)
 
-			for _, v := range hssProps.StorageDeviceInfo.HostBusAdapter {
-				if strings.Contains(strings.ToLower(v.GetHostHostBusAdapter().Key), iscsiAdapterName) {
-					fmt.Printf("found the adapter name!\n")
+	if enabledVal && d.HasChange("iscsi_name") {
+		_, iscsiName := d.GetChange("iscsi_name")
 
-					if _, err = methods.UpdateInternetScsiName(context.Background(), client.Client, &types.UpdateInternetScsiName{
-						This:           hss.Reference(),
-						IScsiHbaDevice: v.GetHostHostBusAdapter().Device,
-						IScsiName:      iscsiName.(string),
-					}); err != nil {
-						return fmt.Errorf("could not update iscsi name: %s", err)
-					}
+		for _, v := range hssProps.StorageDeviceInfo.HostBusAdapter {
+			if strings.Contains(strings.ToLower(v.GetHostHostBusAdapter().Key), iscsiAdapterName) {
+				fmt.Printf("found the adapter name!\n")
+
+				if _, err = methods.UpdateInternetScsiName(context.Background(), client.Client, &types.UpdateInternetScsiName{
+					This:           hss.Reference(),
+					IScsiHbaDevice: v.GetHostHostBusAdapter().Device,
+					IScsiName:      iscsiName.(string),
+				}); err != nil {
+					return fmt.Errorf("could not update iscsi name: %s", err)
 				}
 			}
 		}
 	}
 
-	return nil
+	return resourceVSphereIscsiSoftwareAdapterRead(d, meta)
 }
 
 func resourceVSphereIscsiSoftwareAdapterDelete(d *schema.ResourceData, meta interface{}) error {
