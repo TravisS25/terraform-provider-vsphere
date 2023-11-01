@@ -4,24 +4,13 @@
 package vsphere
 
 import (
-	"fmt"
-	"log"
-	"strings"
-
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
-	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/methods"
-	"github.com/vmware/govmomi/vim25/types"
-)
-
-const (
-	iscsiAdapterName = "internetscsihba"
-	iscsiIDName      = "%s:iscsi-software-adapter"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/iscsi"
 )
 
 func resourceVSphereIscsiSoftwareAdapter() *schema.Resource {
@@ -31,7 +20,7 @@ func resourceVSphereIscsiSoftwareAdapter() *schema.Resource {
 		Update: resourceVSphereIscsiSoftwareAdapterUpdate,
 		Delete: resourceVSphereIscsiSoftwareAdapterDelete,
 		Importer: &schema.ResourceImporter{
-			State: resourceVSphereIscsiSoftwareAdapterImport,
+			StateContext: resourceVSphereIscsiSoftwareAdapterImport,
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -40,12 +29,6 @@ func resourceVSphereIscsiSoftwareAdapter() *schema.Resource {
 				Required:    true,
 				ForceNew:    true,
 				Description: "Host to enable iscsi software adapter",
-			},
-			"enabled": {
-				Type:        schema.TypeBool,
-				Default:     true,
-				Optional:    true,
-				Description: "Determines whether to enable iscsi software adpater.  Default: true",
 			},
 			"iscsi_name": {
 				Type:        schema.TypeString,
@@ -67,68 +50,43 @@ func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta inte
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	hs, err := hostsystem.FromID(client, hostID)
+	hss, err := hostsystem.GetHostStorageSystem(client, hostID)
 	if err != nil {
-		if viapi.IsManagedObjectNotFoundError(err) {
-			return fmt.Errorf("could not find host with id %s", hostID)
-		}
-
-		return fmt.Errorf("error while searching host %s: %s ", hostID, err)
+		return err
 	}
 
-	id := fmt.Sprintf(iscsiIDName, hs.Reference().Value)
-	log.Printf("[DEBUG] setting iscsi id: %s", id)
-	d.SetId(id)
-
-	hsProps, err := hostsystem.Properties(hs)
-	if err != nil {
-		return fmt.Errorf("error trying to retrieve host system properties: %s", err)
+	d.SetId(hostID)
+	if err = iscsi.UpdateSoftwareInternetScsi(client, hss.Reference(), hostID, true); err != nil {
+		return err
 	}
 
-	hss := object.NewHostStorageSystem(client.Client, *hsProps.ConfigManager.StorageSystem)
+	if err = hss.RescanAllHba(context.Background()); err != nil {
+		return fmt.Errorf(
+			"error trying to rescan storage adapters after enabling iscsi software adapter for host '%s': %s",
+			hostID,
+			err,
+		)
+	}
+
 	hssProps, err := hostsystem.HostStorageSystemProperties(hss)
 	if err != nil {
-		return fmt.Errorf("error trying to retrieve host storage system properties: %s", err)
+		return err
 	}
 
-	enabled := d.Get("enabled").(bool)
-
-	if _, err = methods.UpdateSoftwareInternetScsiEnabled(
-		context.Background(),
-		client.Client,
-		&types.UpdateSoftwareInternetScsiEnabled{
-			This:    hssProps.Reference(),
-			Enabled: enabled,
-		},
-	); err != nil {
-		return fmt.Errorf("error while trying to enable/disable iscsi software adapter: %s", err)
+	adapter, err := iscsi.GetIscsiAdater(hssProps, hostID)
+	if err != nil {
+		return err
 	}
 
-	if enabled {
-		for _, v := range hssProps.StorageDeviceInfo.HostBusAdapter {
-			if strings.Contains(strings.ToLower(v.GetHostHostBusAdapter().Key), iscsiAdapterName) {
-				hba := v.(*types.HostInternetScsiHba)
-
-				if name, ok := d.GetOk("iscsi_name"); ok {
-					if _, err = methods.UpdateInternetScsiName(context.Background(), client.Client, &types.UpdateInternetScsiName{
-						This:           hss.Reference(),
-						IScsiHbaDevice: hba.Device,
-						IScsiName:      name.(string),
-					}); err != nil {
-						return fmt.Errorf("could not update iscsi name: %s", err)
-					}
-
-					d.Set("iscsi_name", name.(string))
-					log.Printf("[DEBUG] setting iscsi name from user: %s", name.(string))
-				} else {
-					log.Printf("[DEBUG] setting iscsi name from vmware: %s", hba.IScsiName)
-					d.Set("iscsi_name", hba.IScsiName)
-				}
-			}
+	if name, ok := d.GetOk("iscsi_name"); ok {
+		if err = iscsi.UpdateIscsiName(hostID, adapter.Device, name.(string), client, hssProps.Reference()); err != nil {
+			return err
 		}
-	}
 
-	log.Printf("[DEBUG] at the end of iscsi create function")
+		d.Set("iscsi_name", name.(string))
+	} else {
+		d.Set("iscsi_name", adapter.IScsiName)
+	}
 
 	return resourceVSphereIscsiSoftwareAdapterRead(d, meta)
 }
@@ -137,39 +95,21 @@ func resourceVSphereIscsiSoftwareAdapterRead(d *schema.ResourceData, meta interf
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	hs, err := hostsystem.FromID(client, hostID)
+	hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
 	if err != nil {
-		if viapi.IsManagedObjectNotFoundError(err) {
-			return fmt.Errorf("could not find host with id %s", hostID)
-		}
-
-		return fmt.Errorf("error while searching host %s. Error: %s ", hostID, err)
+		return err
 	}
 
 	d.Set("host_system_id", hostID)
 
-	hsProps, err := hostsystem.Properties(hs)
-	if err != nil {
-		return fmt.Errorf("error trying to retrieve host system properties: %s", err)
-	}
-
-	hss := object.NewHostStorageSystem(client.Client, *hsProps.ConfigManager.StorageSystem)
-	hssProps, err := hostsystem.HostStorageSystemProperties(hss)
-	if err != nil {
-		return fmt.Errorf("error trying to retrieve host storage system properties: %s", err)
-	}
-
-	d.Set("enabled", hssProps.StorageDeviceInfo.SoftwareInternetScsiEnabled)
-
 	if hssProps.StorageDeviceInfo.SoftwareInternetScsiEnabled {
-		for _, v := range hssProps.StorageDeviceInfo.HostBusAdapter {
-			if strings.Contains(strings.ToLower(v.GetHostHostBusAdapter().Key), iscsiAdapterName) {
-				d.Set("iscsi_name", v.(*types.HostInternetScsiHba).IScsiName)
-			}
+		adapter, err := iscsi.GetIscsiAdater(hssProps, hostID)
+		if err != nil {
+			return err
 		}
-	}
 
-	log.Printf("[DEBUG] at the end of iscsi read function")
+		d.Set("iscsi_name", adapter.IScsiName)
+	}
 
 	return nil
 }
@@ -179,62 +119,24 @@ func resourceVSphereIscsiSoftwareAdapterUpdate(d *schema.ResourceData, meta inte
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	hs, err := hostsystem.FromID(client, hostID)
+	hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
 	if err != nil {
-		if viapi.IsManagedObjectNotFoundError(err) {
-			return fmt.Errorf("could not find host with id %s", hostID)
-		}
-
-		return fmt.Errorf("error while searching host %s. Error: %s ", hostID, err)
+		return err
 	}
 
-	hsProps, err := hostsystem.Properties(hs)
-	if err != nil {
-		return fmt.Errorf("error trying to retrieve host system properties: %s", err)
-	}
-
-	hss := object.NewHostStorageSystem(client.Client, *hsProps.ConfigManager.StorageSystem)
-	hssProps, err := hostsystem.HostStorageSystemProperties(hss)
-	if err != nil {
-		return fmt.Errorf("error trying to retrieve host storage system properties: %s", err)
-	}
-
-	if d.HasChange("enabled") {
-		_, enabledVal := d.GetChange("enabled")
-
-		if _, err = methods.UpdateSoftwareInternetScsiEnabled(
-			context.Background(),
-			client.Client,
-			&types.UpdateSoftwareInternetScsiEnabled{
-				This:    hssProps.Reference(),
-				Enabled: enabledVal.(bool),
-			},
-		); err != nil {
-			return fmt.Errorf("error while trying to enable/disable iscsi software adapter: %s", err)
-		}
-	}
-
-	enabledVal := d.Get("enabled").(bool)
-
-	if enabledVal && d.HasChange("iscsi_name") {
+	if d.HasChange("iscsi_name") {
 		_, iscsiName := d.GetChange("iscsi_name")
+		adapter, err := iscsi.GetIscsiAdater(hssProps, hostID)
+		if err != nil {
+			return err
+		}
 
-		for _, v := range hssProps.StorageDeviceInfo.HostBusAdapter {
-			if strings.Contains(strings.ToLower(v.GetHostHostBusAdapter().Key), iscsiAdapterName) {
-				fmt.Printf("found the adapter name!\n")
-
-				if _, err = methods.UpdateInternetScsiName(context.Background(), client.Client, &types.UpdateInternetScsiName{
-					This:           hss.Reference(),
-					IScsiHbaDevice: v.GetHostHostBusAdapter().Device,
-					IScsiName:      iscsiName.(string),
-				}); err != nil {
-					return fmt.Errorf("could not update iscsi name: %s", err)
-				}
-			}
+		if err = iscsi.UpdateIscsiName(hostID, adapter.Device, iscsiName.(string), client, hssProps.Reference()); err != nil {
+			return err
 		}
 	}
 
-	return resourceVSphereIscsiSoftwareAdapterRead(d, meta)
+	return nil
 }
 
 func resourceVSphereIscsiSoftwareAdapterDelete(d *schema.ResourceData, meta interface{}) error {
@@ -242,40 +144,27 @@ func resourceVSphereIscsiSoftwareAdapterDelete(d *schema.ResourceData, meta inte
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	hs, err := hostsystem.FromID(client, hostID)
+	hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
 	if err != nil {
-		if viapi.IsManagedObjectNotFoundError(err) {
-			return fmt.Errorf("could not find host with id %s", hostID)
-		}
-
-		return fmt.Errorf("error while searching host %s. Error: %s ", hostID, err)
+		return err
 	}
 
-	hsProps, err := hostsystem.Properties(hs)
-	if err != nil {
-		return fmt.Errorf("error trying to retrieve host system properties: %s", err)
-	}
-
-	hss := object.NewHostStorageSystem(client.Client, *hsProps.ConfigManager.StorageSystem)
-	hssProps, err := hostsystem.HostStorageSystemProperties(hss)
-	if err != nil {
-		return fmt.Errorf("error trying to retrieve host storage system properties: %s", err)
-	}
-
-	if _, err = methods.UpdateSoftwareInternetScsiEnabled(
-		context.Background(),
-		client.Client,
-		&types.UpdateSoftwareInternetScsiEnabled{
-			This:    hssProps.Reference(),
-			Enabled: false,
-		},
-	); err != nil {
-		return fmt.Errorf("error while trying to delete iscsi software adapter: %s", err)
-	}
-
-	return nil
+	return iscsi.UpdateSoftwareInternetScsi(client, hssProps.Reference(), hostID, false)
 }
 
-func resourceVSphereIscsiSoftwareAdapterImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
-	return nil, nil
+func resourceVSphereIscsiSoftwareAdapterImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	client := meta.(*Client).vimClient
+	hostID := d.Id()
+	hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err = iscsi.GetIscsiAdater(hssProps, hostID); err != nil {
+		return nil, err
+	}
+
+	d.SetId(hostID)
+	d.Set("host_system_id", hostID)
+	return []*schema.ResourceData{d}, nil
 }
