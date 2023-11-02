@@ -63,7 +63,7 @@ func testAccVSphereIscsiSoftwareAdapterDestroy(s *terraform.State) error {
 		}
 		hostID := rs.Primary.ID
 		client := testAccProvider.Meta().(*Client).vimClient
-		hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
+		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
 		if err != nil {
 			return err
 		}
@@ -87,7 +87,7 @@ func testAccVSphereIscsiSoftwareAdapterExists(name string) resource.TestCheckFun
 		}
 		hostID := rs.Primary.ID
 		client := testAccProvider.Meta().(*Client).vimClient
-		hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
+		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
 		if err != nil {
 			return err
 		}
@@ -109,7 +109,7 @@ func testAccVSphereIscsiSoftwareAdapterWithIscsiName(resourceName, iscsiName str
 		}
 		hostID := rs.Primary.ID
 		client := testAccProvider.Meta().(*Client).vimClient
-		hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
+		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
 		if err != nil {
 			return err
 		}

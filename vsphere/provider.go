@@ -180,6 +180,7 @@ func Provider() *schema.Provider {
 			"vsphere_vmfs_disks":                 dataSourceVSphereVmfsDisks(),
 			"vsphere_role":                       dataSourceVsphereRole(),
 			"vsphere_host_service_state":         dataSourceVSphereHostServiceState(),
+			"vsphere_iscsi_software_adapter":     dataSourceVSphereIscsiSoftwareAdapter(),
 		},
 
 		ConfigureFunc: providerConfigure,

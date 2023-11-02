@@ -50,7 +50,7 @@ func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta inte
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	hss, err := hostsystem.GetHostStorageSystem(client, hostID)
+	hss, err := hostsystem.GetHostStorageSystemFromHost(client, hostID)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func resourceVSphereIscsiSoftwareAdapterRead(d *schema.ResourceData, meta interf
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func resourceVSphereIscsiSoftwareAdapterUpdate(d *schema.ResourceData, meta inte
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func resourceVSphereIscsiSoftwareAdapterDelete(d *schema.ResourceData, meta inte
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func resourceVSphereIscsiSoftwareAdapterDelete(d *schema.ResourceData, meta inte
 func resourceVSphereIscsiSoftwareAdapterImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	client := meta.(*Client).vimClient
 	hostID := d.Id()
-	hssProps, err := hostsystem.GetHostStorageSystemProperties(client, hostID)
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
 	if err != nil {
 		return nil, err
 	}

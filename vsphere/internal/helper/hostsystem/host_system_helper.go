@@ -72,6 +72,8 @@ func Properties(host *object.HostSystem) (*mo.HostSystem, error) {
 	return &props, nil
 }
 
+// HostStorageSystemProperties is a convenience method that wraps fetching the HostStorageSystem MO
+// from its higher-level object.
 func HostStorageSystemProperties(hss *object.HostStorageSystem) (*mo.HostStorageSystem, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
 	defer cancel()
@@ -82,9 +84,9 @@ func HostStorageSystemProperties(hss *object.HostStorageSystem) (*mo.HostStorage
 	return &props, nil
 }
 
-// GetHostStorageSystemProperties is util helper that grabs the storage system properties for given host
-func GetHostStorageSystemProperties(client *govmomi.Client, hostID string) (*mo.HostStorageSystem, error) {
-	hss, err := GetHostStorageSystem(client, hostID)
+// GetHostStorageSystemPropertiesFromHost is util helper that grabs the storage system properties for given host
+func GetHostStorageSystemPropertiesFromHost(client *govmomi.Client, hostID string) (*mo.HostStorageSystem, error) {
+	hss, err := GetHostStorageSystemFromHost(client, hostID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +99,8 @@ func GetHostStorageSystemProperties(client *govmomi.Client, hostID string) (*mo.
 	return hssProps, nil
 }
 
-func GetHostStorageSystem(client *govmomi.Client, hostID string) (*object.HostStorageSystem, error) {
+// GetHostStorageSystemFromHost is util helper that grabs the storage system properties for given host
+func GetHostStorageSystemFromHost(client *govmomi.Client, hostID string) (*object.HostStorageSystem, error) {
 	hs, err := FromID(client, hostID)
 	if err != nil {
 		if viapi.IsManagedObjectNotFoundError(err) {
