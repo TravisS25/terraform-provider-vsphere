@@ -29,25 +29,21 @@ func TestAccResourceVSphereIscsiSoftwareAdapter_basic(t *testing.T) {
 		CheckDestroy: testAccVSphereIscsiSoftwareAdapterDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccVSphereIscsiSoftwareAdapterConfig(testIscsiName),
+				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(testIscsiName),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVSphereIscsiSoftwareAdapterExists("vsphere_iscsi_software_adapter.h1"),
 					testAccVSphereIscsiSoftwareAdapterWithIscsiName("vsphere_iscsi_software_adapter.h1", testIscsiName),
 				),
 			},
 			{
-				Config: testAccVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
+				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVSphereIscsiSoftwareAdapterWithIscsiName("vsphere_iscsi_software_adapter.h1", newTestIscsiName),
 				),
 			},
 			{
-				ResourceName: "vsphere_iscsi_software_adapter.h1",
-				Config:       testAccVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
-				// Check: resource.ComposeTestCheckFunc(
-				// 	testAccVSphereIscsiSoftwareAdapterExists("vsphere_iscsi_software_adapter.h1"),
-				// 	testAccVSphereIscsiSoftwareAdapterWithIscsiName("vsphere_iscsi_software_adapter.h1", testIscsiName),
-				// ),
+				ResourceName:      "vsphere_iscsi_software_adapter.h1",
+				Config:            testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
 				ImportState:       true,
 				ImportStateVerify: true,
 			},
@@ -127,7 +123,7 @@ func testAccVSphereIscsiSoftwareAdapterWithIscsiName(resourceName, iscsiName str
 	}
 }
 
-func testAccVSphereIscsiSoftwareAdapterConfig(iscsiName string) string {
+func testAccResourceVSphereIscsiSoftwareAdapterConfig(iscsiName string) string {
 	return fmt.Sprintf(
 		`
 	%s

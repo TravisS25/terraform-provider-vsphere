@@ -5,8 +5,6 @@ package vsphere
 
 import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/iscsi"
 )
 
 func dataSourceVSphereIscsiSoftwareAdapter() *schema.Resource {
@@ -17,27 +15,23 @@ func dataSourceVSphereIscsiSoftwareAdapter() *schema.Resource {
 			"host_system_id": {
 				Type:        schema.TypeString,
 				Description: "The host to gather iscsi information",
-				Optional:    true,
+				Required:    true,
+			},
+			"iscsi_name": {
+				Type:        schema.TypeString,
+				Description: "The host to gather iscsi information",
+				Computed:    true,
 			},
 		},
 	}
 }
 
 func dataSourceVSphereIscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-
-	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+	err := iscsiSoftwareAdapterRead(d, meta, true)
 	if err != nil {
 		return err
 	}
 
-	if hssProps.StorageDeviceInfo.SoftwareInternetScsiEnabled {
-		if _, err = iscsi.GetIscsiAdater(hssProps, hostID); err != nil {
-			return err
-		}
-	}
-
-	d.SetId(hostID)
+	d.SetId(d.Get("host_system_id").(string))
 	return nil
 }

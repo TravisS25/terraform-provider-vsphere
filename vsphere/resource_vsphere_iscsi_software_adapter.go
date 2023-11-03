@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/iscsi"
 )
@@ -36,12 +36,6 @@ func resourceVSphereIscsiSoftwareAdapter() *schema.Resource {
 				Optional:    true,
 				Description: "The unique iqn name for the iscsi software adapter if enabled.  If left blank, vmware will generate the iqn name",
 			},
-
-			// Add tags schema
-			vSphereTagAttributeKey: tagsSchema(),
-
-			// Custom Attributes
-			customattribute.ConfigKey: customattribute.ConfigSchema(),
 		},
 	}
 }
@@ -92,26 +86,7 @@ func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta inte
 }
 
 func resourceVSphereIscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-
-	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
-	if err != nil {
-		return err
-	}
-
-	d.Set("host_system_id", hostID)
-
-	if hssProps.StorageDeviceInfo.SoftwareInternetScsiEnabled {
-		adapter, err := iscsi.GetIscsiAdater(hssProps, hostID)
-		if err != nil {
-			return err
-		}
-
-		d.Set("iscsi_name", adapter.IScsiName)
-	}
-
-	return nil
+	return iscsiSoftwareAdapterRead(d, meta, false)
 }
 
 func resourceVSphereIscsiSoftwareAdapterUpdate(d *schema.ResourceData, meta interface{}) error {
@@ -167,4 +142,31 @@ func resourceVSphereIscsiSoftwareAdapterImport(ctx context.Context, d *schema.Re
 	d.SetId(hostID)
 	d.Set("host_system_id", hostID)
 	return []*schema.ResourceData{d}, nil
+}
+
+func iscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}, isDataSource bool) error {
+	client := meta.(*Client).vimClient
+	hostID := d.Get("host_system_id").(string)
+
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+	if err != nil {
+		return err
+	}
+
+	d.Set("host_system_id", hostID)
+
+	spew.Dump(hssProps.StorageDeviceInfo)
+
+	if hssProps.StorageDeviceInfo.SoftwareInternetScsiEnabled {
+		adapter, err := iscsi.GetIscsiAdater(hssProps, hostID)
+		if err != nil {
+			return err
+		}
+
+		d.Set("iscsi_name", adapter.IScsiName)
+	} else if isDataSource {
+		return fmt.Errorf("iscsi software adapter is not enabled for host '%s'", hostID)
+	}
+
+	return nil
 }
