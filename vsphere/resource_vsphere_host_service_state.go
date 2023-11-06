@@ -5,55 +5,19 @@ package vsphere
 
 import (
 	"fmt"
+	"strings"
 
 	"context"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostservicestate"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
-var (
-// serviceKeyMap is simply a mapping where the key is what the user chooses
-// and the value is the actual key for service
-//
-// Reason for this is some of the keys are hard to identify by their acronym when
-// referencing from a gui point of view so this mapping makes it more clear
-//
-//	serviceKeyMap = map[string]hostservicestate.HostServiceKey{
-//		"dcui":               hostservicestate.HostServiceKeyDCUI,
-//		"shell":              hostservicestate.HostServiceKeyShell,
-//		"ssh":                hostservicestate.HostServiceKeySSH,
-//		"attestd":            hostservicestate.HostServiceKeyAttestd,
-//		"dpd":                hostservicestate.HostServiceKeyDPD,
-//		"kmxd":               hostservicestate.HostServiceKeyKMXD,
-//		"load_based_teaming": hostservicestate.HostServiceKeyLoadBasedTeaming,
-//		"active_directory":   hostservicestate.HostServiceKeyActiveDirectory,
-//		"ntpd":               hostservicestate.HostServiceKeyNTPD,
-//		"smart_card":         hostservicestate.HostServiceKeySmartCard,
-//		"ptpd":               hostservicestate.HostServiceKeyPTPD,
-//		"cim_server":         hostservicestate.HostServiceKeyCIMServer,
-//		"slpd":               hostservicestate.HostServiceKeySLPD,
-//		"snmpd":              hostservicestate.HostServiceKeySNMPD,
-//		"vltd":               hostservicestate.HostServiceKeyVLTD,
-//		"syslog_server":      hostservicestate.HostServiceKeySyslogServer,
-//		"ha_agent":           hostservicestate.HostServiceKeyHAAgent,
-//		"vcenter_agent":      hostservicestate.HostServiceKeyVcenterAgent,
-//		"xorg":               hostservicestate.HostServiceKeyXORG,
-//	}
-)
-
-func resourceVSphereHostServiceState() *schema.Resource {
+func resourceVsphereHostServiceState() *schema.Resource {
 	srvKeyOptMsg := ""
-	// srvKeyList := make([]string, 0, len(serviceKeyMap))
-	// for k := range serviceKeyMap {
-	// 	srvKeyOptMsg += "'" + k + "', "
-	// 	srvKeyList = append(srvKeyList, k)
-	// }
-
 	srvKeyList := []string{
 		string(hostservicestate.HostServiceKeyDCUI),
 		string(hostservicestate.HostServiceKeyShell),
@@ -96,7 +60,7 @@ func resourceVSphereHostServiceState() *schema.Resource {
 				ForceNew:    true,
 				Description: "Host id of machine that will update service",
 			},
-			"service_key": {
+			"key": {
 				Type:         schema.TypeString,
 				Required:     true,
 				Description:  "Key for service to update state on given host.  Options: " + srvKeyOptMsg,
@@ -129,7 +93,7 @@ func resourceVSphereHostServiceState() *schema.Resource {
 func resourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
-	ss, err := hostservicestate.GetServiceState(d, meta, client, provider.DefaultAPITimeout)
+	ss, err := hostservicestate.GetServiceState(d, client, provider.DefaultAPITimeout)
 	if err != nil {
 		return fmt.Errorf(
 			"error trying to retrieve service state for host '%s': %s",
@@ -148,17 +112,17 @@ func resourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interface{
 
 func resourceVSphereHostServiceStateCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	err := hostservicestate.UpdateServiceState(d, meta, client, true)
+	err := hostservicestate.UpdateServiceState(d, client, true)
 	if err != nil {
 		return err
 	}
 
-	return resourceVSphereDatacenterRead(d, meta)
+	return nil
 }
 
 func resourceVSphereHostServiceStateUpdate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	err := hostservicestate.UpdateServiceState(d, meta, client, false)
+	err := hostservicestate.UpdateServiceState(d, client, false)
 	if err != nil {
 		return err
 	}
@@ -169,22 +133,17 @@ func resourceVSphereHostServiceStateUpdate(d *schema.ResourceData, meta interfac
 func resourceVSphereHostServiceStateDelete(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
-
-	// Find host and get reference to it.
-	host, err := hostsystem.FromID(client, hostID)
-	if err != nil {
-		return fmt.Errorf("error while trying to retrieve host '%s': %s", hostID, err)
-	}
-
-	if err = hostservicestate.SetServiceState(
-		host,
-		provider.DefaultAPITimeout,
+	err := hostservicestate.SetServiceState(
+		client,
 		hostservicestate.ServiceState{
-			Key:     hostservicestate.HostServiceKey(d.Get("key").(string)),
-			Policy:  types.HostServicePolicyOff,
-			Running: false,
+			HostSystemID: hostID,
+			Key:          hostservicestate.HostServiceKey(d.Get("key").(string)),
+			Policy:       types.HostServicePolicyOff,
+			Running:      false,
 		},
-	); err != nil {
+		provider.DefaultAPITimeout,
+	)
+	if err != nil {
 		return fmt.Errorf("error trying to set service state for host '%s': %s", hostID, err)
 	}
 
@@ -193,16 +152,24 @@ func resourceVSphereHostServiceStateDelete(d *schema.ResourceData, meta interfac
 
 func resourceVSphereHostServiceStateImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-	ss, err := hostservicestate.GetServiceState(d, meta, client, provider.DefaultAPITimeout)
+	id := strings.Split(d.Id(), ":")
+
+	if len(id) != 2 {
+		return nil, fmt.Errorf("invalid import format.  Format should be: <host_system_id>:<key>")
+	}
+
+	d.Set("host_system_id", id[0])
+	d.Set("key", id[1])
+
+	_, err := hostservicestate.GetServiceState(d, client, provider.DefaultAPITimeout)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"error trying to retrieve service state for host '%s': %s",
-			hostID,
+			id[0],
 			err,
 		)
 	}
 
-	d.SetId(fmt.Sprintf("%s:%s", hostID, ss.Key))
+	d.SetId(fmt.Sprintf("%s:%s", id[0], id[1]))
 	return []*schema.ResourceData{d}, nil
 }
