@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/testhelper"
 
 	"github.com/vmware/govmomi/vim25/types"
@@ -203,34 +202,6 @@ func TestAccResourceVSphereHost_emptyLicense(t *testing.T) {
 	})
 }
 
-// NOTE: This test has currently not been tested/run as we don't want to destroy the host
-// on cleanup with current setup, will test later with another environment
-func TestAccResourceVSphereHost_sshService(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			RunSweepers()
-			testAccPreCheck(t)
-			testAccCheckEnvVariables(t, []string{"ESX_HOSTNAME", "ESX_USERNAME", "ESX_PASSWORD"})
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccVSphereHostDestroy,
-		Steps: []resource.TestStep{
-			{
-				Config: testAccVSphereHostConfigSSHService(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccVSphereHostSSHServiceState(
-						"vsphere_host.h1",
-						map[string]interface{}{
-							"running": true,
-							"policy":  string(types.HostServicePolicyOn),
-						},
-					),
-				),
-			},
-		},
-	})
-}
-
 func testAccVSphereHostExists(name string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[name]
@@ -313,33 +284,6 @@ func testAccVSphereHostLockdownState(name string, lockdown string) resource.Test
 
 		if !res {
 			return fmt.Errorf("Host with ID %s not in desired lockdown state. Current state: %s", hostID, lockdown)
-		}
-
-		return nil
-	}
-}
-
-func testAccVSphereHostSSHServiceState(name string, expectedState map[string]interface{}) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[name]
-
-		if !ok {
-			return fmt.Errorf("%s key not found on the server", name)
-		}
-		hostID := rs.Primary.ID
-		client := testAccProvider.Meta().(*Client).vimClient
-		ss, res, err := checkSSHService(client, hostID, expectedState)
-		if err != nil {
-			return err
-		}
-
-		if !res {
-			return fmt.Errorf(
-				"SSH service for host %s not in correct state.  Expected state: %+v Current state: %+v",
-				hostID,
-				expectedState,
-				ss,
-			)
 		}
 
 		return nil
@@ -432,36 +376,6 @@ func checkHostLockdown(client *govmomi.Client, hostID, lockdownMode string) (boo
 	}
 
 	return modeString == lockdownMode, nil
-}
-
-func checkSSHService(client *govmomi.Client, hostID string, verifySS map[string]interface{}) (map[string]interface{}, bool, error) {
-	host, err := hostsystem.FromID(client, hostID)
-	if err != nil {
-		return nil, false, err
-	}
-
-	ss, err := hostsystem.GetServiceState(host, provider.DefaultAPITimeout, hostsystem.HostServiceKeySSH)
-	if err != nil {
-		return ss, false, err
-	}
-
-	if r, ok := ss["running"]; ok {
-		if r != verifySS["running"] {
-			return ss, false, nil
-		}
-	} else {
-		return ss, false, nil
-	}
-
-	if p, ok := ss["policy"]; ok {
-		if p != verifySS["policy"] {
-			return ss, false, nil
-		}
-	} else {
-		return ss, false, nil
-	}
-
-	return ss, true, nil
 }
 
 func testAccVSphereHostConfigSSHService() string {
