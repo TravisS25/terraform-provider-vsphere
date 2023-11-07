@@ -93,7 +93,7 @@ func resourceVsphereHostServiceState() *schema.Resource {
 func resourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
-	ss, err := hostservicestate.GetServiceState(d, client, provider.DefaultAPITimeout)
+	ss, err := hostservicestate.GetServiceState(client, hostID, d.Get("key").(string), provider.DefaultAPITimeout)
 	if err != nil {
 		return fmt.Errorf(
 			"error trying to retrieve service state for host '%s': %s",
@@ -161,7 +161,7 @@ func resourceVSphereHostServiceStateImport(ctx context.Context, d *schema.Resour
 	d.Set("host_system_id", id[0])
 	d.Set("key", id[1])
 
-	_, err := hostservicestate.GetServiceState(d, client, provider.DefaultAPITimeout)
+	_, err := hostservicestate.GetServiceState(client, id[0], id[1], provider.DefaultAPITimeout)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"error trying to retrieve service state for host '%s': %s",

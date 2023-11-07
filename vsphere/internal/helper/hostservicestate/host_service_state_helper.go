@@ -47,8 +47,8 @@ const (
 )
 
 // GetServiceState retrieves the service state of the given host
-func GetServiceState(d *schema.ResourceData, client *govmomi.Client, timeout time.Duration) (*ServiceState, error) {
-	hostID := d.Get("host_system_id").(string)
+func GetServiceState(client *govmomi.Client, hostID, key string, timeout time.Duration) (*ServiceState, error) {
+	//hostID := d.Get("host_system_id").(string)
 
 	// Find host and get reference to it.
 	host, err := hostsystem.FromID(client, hostID)
@@ -71,7 +71,7 @@ func GetServiceState(d *schema.ResourceData, client *govmomi.Client, timeout tim
 		}
 
 		for _, hostSrv := range hsList {
-			if strings.EqualFold(hostSrv.Key, d.Get("key").(string)) {
+			if strings.EqualFold(hostSrv.Key, key) {
 				return &ServiceState{
 					HostSystemID: hostID,
 					Key:          HostServiceKey(hostSrv.Key),
