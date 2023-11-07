@@ -80,6 +80,8 @@ func GetServiceState(client *govmomi.Client, hostID, key string, timeout time.Du
 				}, nil
 			}
 		}
+
+		return nil, fmt.Errorf("could not find service with key: %s", key)
 	}
 
 	return nil, fmt.Errorf("could not obtain config manager for host %s", host.Name())
