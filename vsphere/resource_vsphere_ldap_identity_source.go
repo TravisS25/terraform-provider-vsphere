@@ -32,6 +32,8 @@ import (
 	"os"
 	"github.com/vmware/govmomi/vim25/soap"
 
+	"github.com/vmware/govmomi/ssoadmin/methods"
+
 )
 
 var identitynotfound = errors.New("could not find identity source - this might be expected")
@@ -45,7 +47,7 @@ func resourceVSphereLDAPIdentitySource() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			State: resourceVSphereLDAPIdentitySourceImport,
 		},
-
+		CustomizeDiff: resourceVSphereLDAPIdentitySourceCustomDiff,
 		Schema: map[string]*schema.Schema{
 			"ldap_username": {
 				Type:     schema.TypeString,
@@ -92,6 +94,18 @@ func resourceVSphereLDAPIdentitySource() *schema.Resource {
 				Default: "",
 				Optional: true,
 			},
+			// these 2 params (username and password) will get removed when
+			// travis makes the client for us in provider.go
+			"vsphere_username": {
+				Type:     schema.TypeString,
+				Required: true,
+			},
+			"vsphere_password": {
+				Type:     schema.TypeString,
+				Required: true,
+				Sensitive: true,
+			},
+
 
 			// Add tags schema
 			vSphereTagAttributeKey: tagsSchema(),
@@ -107,7 +121,7 @@ func resourceVSphereLDAPIdentitySourceCreate(d *schema.ResourceData, meta interf
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
 
-	ssoclient, err := createSSOClient(client)
+	ssoclient, err := createSSOClient(client, d.Get("vsphere_username").(string), d.Get("vsphere_password").(string))
 	if err != nil {
 		return fmt.Errorf("error in create function creating ssoclient: %s", err)
 	}
@@ -184,13 +198,29 @@ func identitySourceExists(ssoclient *ssoadmin.Client, id string) (*ssoadmin_type
 	return nil, identitynotfound
 }
 
-//// NEW CODE BEGINS
-func createSSOClient(client *govmomi.Client) (*ssoadmin.Client, error) {
+// Hopefully this will be replaced by travis building the ssoclient within the provider first and we can remove all the env var hacky stuff here
+func createSSOClient(client *govmomi.Client, vcenter_username string, vcenter_password string) (*ssoadmin.Client, error) {
+
+	// if we are doing an import, we do not have access TF variables.tf vars e.g. cannot do a d.Get("var")
+	// this means the params for vcenter_username and vcenter_password will be blank here (for imports ONLY)
+	// - for creates, reads, and updates, we let TF check these for us.
+	if vcenter_username == "" {
+		if os.Getenv("TF_VAR_vsphere_username") == "" {
+			return nil, fmt.Errorf("please set your TF_VAR_vsphere_username to a username with administrative access to vcenter and retry")
+		}
+		vcenter_username = os.Getenv("TF_VAR_vsphere_username")
+
+	}
+
+	if vcenter_password == "" {
+		if os.Getenv("TF_VAR_vsphere_password") == "" {
+			return nil, fmt.Errorf("please set your TF_VAR_vsphere_password for the TF_VAR_vsphere_username with admin access and retry")
+		}
+		vcenter_password = os.Getenv("TF_VAR_vsphere_password")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
-
-	// CODE FROM MY GO SCRIPT BEGINS
 
 	ssoclient, err := ssoadmin.NewClient(ctx, client.Client)
 	if err != nil {
@@ -204,7 +234,8 @@ func createSSOClient(client *govmomi.Client) (*ssoadmin.Client, error) {
 
 	req := sts.TokenRequest{
 		Certificate: client.Certificate(),
-		Userinfo:    url.UserPassword( os.Getenv("vcenter_username"),  os.Getenv("vcenter_password")),
+		// FIX ME
+		Userinfo:    url.UserPassword(vcenter_username, vcenter_password),
 	}
 
 	header := soap.Header{
@@ -229,7 +260,7 @@ func createSSOClient(client *govmomi.Client) (*ssoadmin.Client, error) {
 
 func resourceVSphereLDAPIdentitySourceRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	ssoclient, err := createSSOClient(client)
+	ssoclient, err := createSSOClient(client, d.Get("vsphere_username").(string), d.Get("vsphere_password").(string))
 	if err != nil {
 		return fmt.Errorf("error creating ssoclient: %s", err)
 	}
@@ -258,81 +289,93 @@ func resourceVSphereLDAPIdentitySourceRead(d *schema.ResourceData, meta interfac
 }
 
 func resourceVSphereLDAPIdentitySourceUpdate(d *schema.ResourceData, meta interface{}) error {
-	// // Load up the tags client, which will validate a proper vCenter before
-	// // attempting to proceed if we have tags defined.
-	// tagsClient, err := tagsManagerIfDefined(d, meta)
-	// if err != nil {
-	//	return err
-	// }
-	// // Verify a proper vCenter before proceeding if custom attributes are defined
-	// client := meta.(*Client).vimClient
-	// attrsProcessor, err := customattribute.GetDiffProcessorIfAttributesDefined(client, d)
-	// if err != nil {
-	//	return err
-	// }
+	client := meta.(*Client).vimClient
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
 
-	// dc, err := datacenterExists(d, meta)
-	// if err != nil {
-	//	return fmt.Errorf("couldn't find the specified datacenter: %s", err)
-	// }
+	ssoclient, err := createSSOClient(client, d.Get("vsphere_username").(string), d.Get("vsphere_password").(string))
+	if err != nil {
+		return fmt.Errorf("error in create function creating ssoclient: %s", err)
+	}
 
-	// // Apply any pending tags now
-	// if tagsClient != nil {
-	//	if err := processTagDiff(tagsClient, d, dc); err != nil {
-	//		return err
-	//	}
-	// }
+	_, err = identitySourceExists(ssoclient, d.Get("domain_name").(string))
+	if err != nil {
+		// check if the domain we are about to create already exists (it should...) and we get no other errors
+		if errors.Is(err, identitynotfound) {
+			return fmt.Errorf("unable to locate the domain which should exist: %s", err)
+		} else {
+			return fmt.Errorf("error getting currently configured ldap identity sources for update: %s", err)
+		}
+	}
 
-	// // Set custom attributes
-	// if attrsProcessor != nil {
-	//	if err := attrsProcessor.ProcessDiff(dc); err != nil {
-	//		return err
-	//	}
-	// }
+
+	if d.HasChanges("ldap_username", "ldap_password") {
+		auth := ssoadmin_types.SsoAdminIdentitySourceManagementServiceAuthenticationCredentails {
+			Username: d.Get("ldap_username").(string),
+			Password: d.Get("ldap_password").(string),
+		}
+
+		err = ssoclient.UpdateLdapAuthnType(ctx, d.Get("domain_name").(string), auth)
+		if err != nil {
+			return fmt.Errorf("error updating ldap username or password: %s", err)
+		}
+	}
+
+	if d.HasChanges("friendly_name", "user_base_dn", "group_base_dn", "primary_url", "secondary_url") {
+		details := ssoadmin_types.LdapIdentitySourceDetails {
+			FriendlyName: d.Get("friendly_name").(string),
+			UserBaseDn: d.Get("user_base_dn").(string),
+			GroupBaseDn: d.Get("group_base_dn").(string),
+			PrimaryURL: d.Get("primary_url").(string),
+			FailoverURL: d.Get("failover_url").(string),
+		}
+
+		err = ssoclient.UpdateLdap(ctx, d.Get("domain_name").(string), details)
+
+		if err != nil {
+			return fmt.Errorf("error updating ldap details such as friendly name: %s", err)
+		}
+	}
 
 	return nil
 }
 
 func resourceVSphereLDAPIdentitySourceDelete(d *schema.ResourceData, meta interface{}) error {
-	// client := meta.(*Client).vimClient
-	// name := d.Get("name").(string)
+	client := meta.(*Client).vimClient
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
 
-	// path := name
-	// if v, ok := d.GetOk("folder"); ok {
-	//	path = v.(string) + "/" + name
-	// }
+	ssoclient, err := createSSOClient(client, d.Get("vsphere_username").(string), d.Get("vsphere_password").(string))
+	if err != nil {
+		return fmt.Errorf("error in delete function creating ssoclient: %s", err)
+	}
 
-	// finder := find.NewFinder(client.Client, true)
-	// dc, err := finder.LDAPIdentitySource(context.TODO(), path)
-	// if err != nil {
-	//	log.Printf("couldn't find the specified datacenter: %s", err)
-	//	d.SetId("")
-	//	return nil
-	// }
+	_, err = identitySourceExists(ssoclient, d.Get("domain_name").(string))
+	if err != nil {
+		// check if the domain we are about to create already exists (it should...) and we get no other errors
+		if errors.Is(err, identitynotfound) {
+			return fmt.Errorf("unable to locate the domain which should exist: %s", err)
+		} else {
+			return fmt.Errorf("error getting currently configured ldap identity sources for update: %s", err)
+		}
+	}
 
-	// req := &types.Destroy_Task{
-	//	This: dc.Common.Reference(),
-	// }
+	a := ssoadmin_types.DeleteDomain {
+		// This: ssoclient.ServiceContent.IdentitySourceManagementService,
+		This: ssoclient.ServiceContent.DomainManagementService,
+		Name: d.Get("domain_name").(string),
+	}
 
-	// _, err = methods.Destroy_Task(context.TODO(), client, req)
-	// if err != nil {
-	//	return fmt.Errorf("%s", err)
-	// }
-
-	// // Wait for the datacenter resource to be destroyed
-	// stateConf := &resource.StateChangeConf{
-	//	Pending:    []string{"Created"},
-	//	Target:     []string{},
-	//	Refresh:    resourceVSphereLDAPIdentitySourceStateRefreshFunc(d, meta),
-	//	Timeout:    10 * time.Minute,
-	//	MinTimeout: 3 * time.Second,
-	//	Delay:      5 * time.Second,
-	// }
-
-	// _, err = stateConf.WaitForState()
-	// if err != nil {
-	//	return fmt.Errorf("error waiting for datacenter (%s) to become ready: %s", name, err)
-	// }
+	response, err := methods.DeleteDomain(ctx, client, &a)
+	if response != nil {
+		log.Printf("foobar begins:")
+		log.Printf("foobar - response is: %+v", response)
+		// log.Printf(spew.Dump(response))
+		log.Printf("foobar ends")
+	}
+	if err != nil {
+		return fmt.Errorf("error deleting ldap identity source: %s", err)
+	}
 
 	return nil
 }
@@ -341,7 +384,9 @@ func resourceVSphereLDAPIdentitySourceImport(d *schema.ResourceData, meta interf
 
 	client := meta.(*Client).vimClient
 
-	ssoclient, err := createSSOClient(client)
+	// normally we would use d.Get("vsphere_username").(string), d.Get("vsphere_password").(string) here but the values are not accessible via an import
+	// so they will ALWAYS be blank strings
+	ssoclient, err := createSSOClient(client, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("error creating ssoclient: %s\n", err)
 	}
@@ -358,30 +403,32 @@ func resourceVSphereLDAPIdentitySourceImport(d *schema.ResourceData, meta interf
 
 	return []*schema.ResourceData{d}, nil
 
-	// client := meta.(*Client).vimClient
-	// p := d.Id()
-	// if !strings.HasPrefix(p, "/") {
-	//	return nil, errors.New("path must start with a trailing slash")
-	// }
+}
 
-	// dc, err := datacenter.FromPath(client, p)
-	// if err != nil {
-	//	return nil, err
-	// }
 
-	// // determine a folder if one is present
-	// f, err := folder.ParentFromPath(client, p, folder.VSphereFolderTypeLDAPIdentitySource, dc)
-	// if err != nil {
-	//	return nil, fmt.Errorf("cannot locate folder: %s", err)
-	// }
+// this function sanity checks that the domain you are trying to create / update with terraform is not going to create an error when you run a 'terraform apply'
+// - e.g. this function attempts to catch errors in a 'terraform plan'
+func resourceVSphereLDAPIdentitySourceCustomDiff(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
+	// If the LDAP identity source does NOT exist in state yet...
+	if d.Id() == "" {
+		client := meta.(*Client).vimClient
+		_, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+		defer cancel()
 
-	// path := strings.TrimPrefix(f.InventoryPath, "/")
-	// if path != "" {
-	//	if err := d.Set("folder", path); err != nil {
-	//		return nil, err
-	//	}
-	// }
+		ssoclient, err := createSSOClient(client, d.Get("vsphere_username").(string), d.Get("vsphere_password").(string))
+		if err != nil {
+			return fmt.Errorf("error in delete function creating ssoclient: %s", err)
+		}
 
-	// d.SetId(dc.Name())
-	// return []*schema.ResourceData{d}, nil
+		_, err = identitySourceExists(ssoclient, d.Get("domain_name").(string))
+
+		if err == nil {
+			return fmt.Errorf("the input domain: %s already exists - considering running a 'terraform import'!", d.Get("domain_name").(string))
+		}
+		if !errors.Is(err, identitynotfound) {
+			return fmt.Errorf("error getting currently configured ldap identity sources: %s", err)
+		}
+	}
+
+	return nil
 }
