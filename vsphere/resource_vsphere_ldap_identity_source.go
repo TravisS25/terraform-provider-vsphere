@@ -234,7 +234,6 @@ func createSSOClient(client *govmomi.Client, vcenter_username string, vcenter_pa
 
 	req := sts.TokenRequest{
 		Certificate: client.Certificate(),
-		// FIX ME
 		Userinfo:    url.UserPassword(vcenter_username, vcenter_password),
 	}
 
@@ -360,22 +359,14 @@ func resourceVSphereLDAPIdentitySourceDelete(d *schema.ResourceData, meta interf
 	}
 
 	a := ssoadmin_types.DeleteDomain {
-		// This: ssoclient.ServiceContent.IdentitySourceManagementService,
 		This: ssoclient.ServiceContent.DomainManagementService,
 		Name: d.Get("domain_name").(string),
 	}
 
-	response, err := methods.DeleteDomain(ctx, client, &a)
-	if response != nil {
-		log.Printf("foobar begins:")
-		log.Printf("foobar - response is: %+v", response)
-		// log.Printf(spew.Dump(response))
-		log.Printf("foobar ends")
-	}
+	_, err = methods.DeleteDomain(ctx, ssoclient, &a)
 	if err != nil {
 		return fmt.Errorf("error deleting ldap identity source: %s", err)
 	}
-
 	return nil
 }
 
