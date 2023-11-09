@@ -5,6 +5,7 @@ package vsphere
 
 import (
 	"fmt"
+	"log"
 
 	"context"
 
@@ -229,6 +230,8 @@ func resourceVsphereHostServiceState() *schema.Resource {
 }
 
 func resourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interface{}) error {
+	log.Printf("[DEBUG] hitting service state read")
+
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 	srvs := d.Get("service").([]interface{})
@@ -310,15 +313,32 @@ func resourceVSphereHostServiceStateDelete(d *schema.ResourceData, meta interfac
 }
 
 func resourceVSphereHostServiceStateImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
-
 	client := meta.(*Client).vimClient
 	_, err := hostsystem.FromID(client, d.Id())
 	if err != nil {
 		return nil, fmt.Errorf("error while trying to retrieve host '%s': %s", d.Id(), err)
 	}
 
+	hsList, err := hostservicestate.GetHostServies(client, d.Id(), provider.DefaultAPITimeout)
+	if err != nil {
+		return nil, fmt.Errorf("error while trying to retrieve host services: %s", err)
+	}
+
+	srvs := make([]interface{}, 0, len(hsList))
+
+	for _, hostSrv := range hsList {
+		if hostSrv.Running || hostSrv.Policy != "off" {
+			srvs = append(srvs, map[string]interface{}{
+				"key":     hostSrv.Key,
+				"policy":  hostSrv.Policy,
+				"ruuning": true,
+			})
+		}
+	}
+
 	d.SetId(d.Id())
 	d.Set("host_system_id", d.Id())
+	d.Set("service", srvs)
 
 	return []*schema.ResourceData{d}, nil
 }
@@ -326,8 +346,6 @@ func resourceVSphereHostServiceStateImport(ctx context.Context, d *schema.Resour
 func resourceVSphereHostServiceStateCustomDiff(ctx context.Context, rd *schema.ResourceDiff, meta interface{}) error {
 	srvs := rd.Get("service").([]interface{})
 	trackerMap := map[string]bool{}
-
-	rd.Id()
 
 	for _, val := range srvs {
 		srv := val.(map[string]interface{})
