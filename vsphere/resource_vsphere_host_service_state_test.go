@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -23,7 +22,7 @@ func TestAccResourceVSphereHostServiceState_basic(t *testing.T) {
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
-			testAccCheckEnvVariables(t, []string{"TF_VAR_VSPHERE_SERVICE_KEY"})
+			testAccVSphereHostServiceStateEnvCheck(t)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccVSphereHostServiceStateDestroy,
@@ -56,22 +55,22 @@ func testAccVSphereHostServiceStateDestroy(s *terraform.State) error {
 		if rs.Type != "vsphere_host_service_state" {
 			continue
 		}
-		id := strings.Split(rs.Primary.ID, ":")
-
-		if len(id) != 2 {
-			return fmt.Errorf("invalid id for resource 'vsphere_host_service_state'.  Given: %v", id)
-		}
 
 		client := testAccProvider.Meta().(*Client).vimClient
-		ss, err := hostservicestate.GetServiceState(client, id[0], id[1], provider.DefaultAPITimeout)
+		ss, err := hostservicestate.GetServiceState(
+			client,
+			rs.Primary.ID,
+			hostservicestate.HostServiceKey(os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY")),
+			provider.DefaultAPITimeout,
+		)
 		if err != nil {
-			return fmt.Errorf("error trying to retrieve service state for host '%s': %s", id[0], err)
+			return fmt.Errorf("error trying to retrieve service state for host '%s': %s", rs.Primary.ID, err)
 		}
 
-		if ss.Policy != types.HostServicePolicyOff {
+		if ss["policy"].(string) != string(types.HostServicePolicyOff) {
 			message += " service policy should be 'off' /"
 		}
-		if ss.Running {
+		if ss["running"].(bool) {
 			message += " service should not be running"
 		}
 	}
@@ -92,9 +91,11 @@ func testAccResourceVSphereHostServiceStateConfig(policy types.HostServicePolicy
 
 	resource "vsphere_host_service_state" "h1" {
 		host_system_id = data.vsphere_host.roothost1.id
-		key = "%s"
-		running = %v
-		policy = "%s"
+		service {
+			key = "%s"
+			running = %v
+			policy = "%s"
+		}
 	}
 	`,
 		testhelper.ConfigDataRootDC1(),
@@ -113,11 +114,16 @@ func testAccVSphereHostServiceStateExists(name string) resource.TestCheckFunc {
 		if !ok {
 			return fmt.Errorf("%s key not found on the server", name)
 		}
-		id := strings.Split(rs.Primary.ID, ":")
 		client := testAccProvider.Meta().(*Client).vimClient
-		_, err := hostservicestate.GetServiceState(client, id[0], id[1], provider.DefaultAPITimeout)
+		key := hostservicestate.HostServiceKey(os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY"))
+		_, err := hostservicestate.GetServiceState(
+			client,
+			rs.Primary.ID,
+			key,
+			provider.DefaultAPITimeout,
+		)
 		if err != nil {
-			return fmt.Errorf("error trying to retrieve service state for host '%s': %s", id[0], err)
+			return fmt.Errorf("error trying to retrieve service state for host '%s': %s", rs.Primary.ID, err)
 		}
 
 		return nil
@@ -131,17 +137,36 @@ func testAccVSphereHostServiceStateWithPolicy(resourceName string, policy types.
 		if !ok {
 			return fmt.Errorf("%s key not found on the server", resourceName)
 		}
-		id := strings.Split(rs.Primary.ID, ":")
 		client := testAccProvider.Meta().(*Client).vimClient
-		ss, err := hostservicestate.GetServiceState(client, id[0], id[1], provider.DefaultAPITimeout)
+		key := hostservicestate.HostServiceKey(os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY"))
+		ss, err := hostservicestate.GetServiceState(
+			client,
+			rs.Primary.ID,
+			key,
+			provider.DefaultAPITimeout,
+		)
 		if err != nil {
-			return fmt.Errorf("error trying to retrieve service state for host '%s': %s", id[0], err)
+			return fmt.Errorf("error trying to retrieve service state for host '%s': %s", rs.Primary.ID, err)
 		}
 
-		if ss.Policy != policy {
-			return fmt.Errorf("expected service state: %s; got %s", policy, ss.Policy)
+		if ss["policy"].(string) != string(policy) {
+			return fmt.Errorf("expected service state: %s; got %s", policy, ss["policy"].(string))
 		}
 
 		return nil
+	}
+}
+
+func testAccVSphereHostServiceStateEnvCheck(t *testing.T) {
+	found := false
+
+	for _, v := range serviceKeyList {
+		if v == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY") {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Fatalf("'TF_VAR_VSPHERE_SERVICE_KEY' env variable must be set to valid service key")
 	}
 }
