@@ -268,9 +268,8 @@ func resourceVSphereLDAPIdentitySourceRead(d *schema.ResourceData, meta interfac
 	// if the user specifies a LDAP source to be created that already exists in vcenter this will fail to be created as there is a name conflict
 	// You will not know this is going to error via a 'terraform plan' and it will only occur during a 'terraform apply'
 	identitySource, err := identitySourceExists(ssoclient, d.Id())
-
 	if err != nil {
-		return fmt.Errorf("error checking if existing ldap source exists: %s", err)
+		return fmt.Errorf("Read func - error checking if existing ldap source exists: %s", err)
 	}
 
 	d.Set("domain_name", identitySource.Name)
@@ -380,6 +379,8 @@ func resourceVSphereLDAPIdentitySourceDelete(d *schema.ResourceData, meta interf
 	return nil
 }
 
+// NOTE: This import will create the resource within state successfully but the next 'terraform apply' WILL note some changes for it, even if there is nothing actually changing
+// this is due to our inability to fetch the currently configured passwords that LDAP is using and TF will enforce the ones defined in it.
 func resourceVSphereLDAPIdentitySourceImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 
 	client := meta.(*Client).vimClient
@@ -395,7 +396,7 @@ func resourceVSphereLDAPIdentitySourceImport(d *schema.ResourceData, meta interf
 	_, err = identitySourceExists(ssoclient, d.Id())
 	// throw error if it does NOT exist or issue getting data via API
 	if err != nil {
-		return nil, fmt.Errorf("error checking if identity source exists: %s\n", err)
+		return nil, fmt.Errorf("Import func - error checking if identity source exists: %s\n", err)
 	}
 
 	// If no errors verifying that the identity source does exist
@@ -420,6 +421,7 @@ func resourceVSphereLDAPIdentitySourceCustomDiff(ctx context.Context, d *schema.
 			return fmt.Errorf("error in delete function creating ssoclient: %s", err)
 		}
 
+		// check to see if the identitysource exists - this is what alerts you to a possible issue via 'terraform plan' instead of the 'plan' saying all is good and the 'apply' actually failing
 		_, err = identitySourceExists(ssoclient, d.Get("domain_name").(string))
 
 		if err == nil {
