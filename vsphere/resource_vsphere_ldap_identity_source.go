@@ -6,22 +6,9 @@ package vsphere
 import (
 	"errors"
 	"fmt"
-	"log"
-	// "strings"
-	// "time"
-
 	"context"
-
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
-	// "github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/datacenter"
-	// "github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/folder"
-	"github.com/vmware/govmomi/find"
-	// "github.com/vmware/govmomi/object"
-	// "github.com/vmware/govmomi/vim25/methods"
-	// "github.com/vmware/govmomi/vim25/types"
-
 	"github.com/vmware/govmomi/ssoadmin"
 	ssoadmin_types "github.com/vmware/govmomi/ssoadmin/types"
 
@@ -158,24 +145,6 @@ func resourceVSphereLDAPIdentitySourceCreate(d *schema.ResourceData, meta interf
 	d.SetId(d.Get("domain_name").(string))
 
 	return resourceVSphereLDAPIdentitySourceRead(d, meta)
-}
-
-func resourceVSphereLDAPIdentitySourceStateRefreshFunc(d *schema.ResourceData, meta interface{}) resource.StateRefreshFunc {
-	return func() (interface{}, string, error) {
-		log.Print("[DEBUG] Refreshing datacenter state")
-		dc, err := datacenterExists(d, meta)
-		if err != nil {
-			switch err.(type) {
-			case *find.NotFoundError:
-				log.Printf("[DEBUG] Refreshing state. LDAPIdentitySource not found: %s", err)
-				return nil, "InProgress", nil
-			default:
-				return nil, "Failed", err
-			}
-		}
-		log.Print("[DEBUG] Refreshing state. LDAPIdentitySource found")
-		return dc, "Created", nil
-	}
 }
 
 func identitySourceExists(ssoclient *ssoadmin.Client, id string) (*ssoadmin_types.LdapIdentitySource, error) {
