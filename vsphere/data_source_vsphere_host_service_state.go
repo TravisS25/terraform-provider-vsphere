@@ -4,8 +4,12 @@
 package vsphere
 
 import (
+	"fmt"
+	"log"
+
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostservicestate"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
 )
 
 func dataSourceVSphereHostServiceState() *schema.Resource {
@@ -18,33 +22,57 @@ func dataSourceVSphereHostServiceState() *schema.Resource {
 				Required:    true,
 				Description: "Host id of machine",
 			},
-			"service_keys": {
-				Type:        schema.TypeSet,
-				Required:    true,
-				Description: "Key for service on given host.  Options: " + hostservicestate.GetServiceKeyMsg(serviceKeyList),
-				Elem:        &schema.Schema{Type: schema.TypeString},
-				// ValidateFunc: validation.StringInSlice(serviceKeyList, false),
-			},
-			"running": {
-				Type:        schema.TypeBool,
+			"service": {
+				Type:        schema.TypeList,
 				Computed:    true,
-				Description: "State of the service",
-			},
-			"policy": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The policy of the service",
+				Description: "The service state object",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"key": {
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: "Key for service",
+						},
+						"running": {
+							Type:        schema.TypeBool,
+							Computed:    true,
+							Description: "State of the service",
+						},
+						"policy": {
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: "Policy of the service",
+						},
+					},
+				},
 			},
 		},
 	}
 }
 
 func dataSourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interface{}) error {
-	// err := iscsiSoftwareAdapterRead(d, meta, true)
-	// if err != nil {
-	// 	return err
-	// }
+	log.Printf("[DEBUG] entering data_source_vsphere_host_service_state read function")
 
-	// d.SetId(d.Get("host_system_id").(string))
+	client := meta.(*Client).vimClient
+	hostID := d.Get("host_system_id").(string)
+	hsList, err := hostservicestate.GetHostServies(client, hostID, provider.DefaultAPITimeout)
+	if err != nil {
+		return fmt.Errorf("error retrieving host services for host '%s': %s", hostID, err)
+	}
+
+	srvList := make([]interface{}, 0, len(hsList))
+
+	for _, hs := range hsList {
+		srvList = append(srvList, map[string]interface{}{
+			"key":     hs.Key,
+			"policy":  hs.Policy,
+			"running": hs.Running,
+		})
+	}
+
+	d.SetId(hostID)
+	d.Set("host_system_id", hostID)
+	d.Set("service", srvList)
+
 	return nil
 }

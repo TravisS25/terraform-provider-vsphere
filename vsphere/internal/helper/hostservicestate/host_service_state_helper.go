@@ -4,22 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/vim25/types"
 )
-
-type ServiceState struct {
-	HostSystemID string                  `json:"hostSystemID"`
-	Key          HostServiceKey          `json:"key"`
-	Policy       types.HostServicePolicy `json:"policy"`
-	Running      bool                    `json:"running"`
-}
 
 // HostServiceKey represents the key value of a service for esxi host
 type HostServiceKey string
@@ -46,6 +36,30 @@ const (
 	HostServiceKeyXORG             HostServiceKey = "xorg"
 )
 
+var (
+	ServiceKeyList = []string{
+		string(HostServiceKeyDCUI),
+		string(HostServiceKeyShell),
+		string(HostServiceKeySSH),
+		string(HostServiceKeyAttestd),
+		string(HostServiceKeyDPD),
+		string(HostServiceKeyKMXD),
+		string(HostServiceKeyLoadBasedTeaming),
+		string(HostServiceKeyActiveDirectory),
+		string(HostServiceKeyNTPD),
+		string(HostServiceKeySmartCard),
+		string(HostServiceKeyPTPD),
+		string(HostServiceKeyCIMServer),
+		string(HostServiceKeySLPD),
+		string(HostServiceKeySNMPD),
+		string(HostServiceKeyVLTD),
+		string(HostServiceKeySyslogServer),
+		string(HostServiceKeyHAAgent),
+		string(HostServiceKeyVcenterAgent),
+		string(HostServiceKeyXORG),
+	}
+)
+
 // GetServiceState retrieves the service state of the given host
 func GetServiceState(client *govmomi.Client, hostID string, key HostServiceKey, timeout time.Duration) (map[string]interface{}, error) {
 	hsList, err := GetHostServies(client, hostID, timeout)
@@ -54,18 +68,18 @@ func GetServiceState(client *govmomi.Client, hostID string, key HostServiceKey, 
 	}
 
 	for _, hostSrv := range hsList {
-		if strings.EqualFold(hostSrv.Key, string(key)) {
+		if hostSrv.Key == string(key) {
 			return map[string]interface{}{
-				"key":     hostSrv.Key,
-				"policy":  hostSrv.Policy,
-				"running": hostSrv.Running,
+				"key":    hostSrv.Key,
+				"policy": hostSrv.Policy,
 			}, nil
 		}
 	}
 
-	return nil, fmt.Errorf("could not find service with key: '%s' on host '%s'", key, hostID)
+	return nil, fmt.Errorf("could not find service with key '%s' on host '%s'", key, hostID)
 }
 
+// GetHostServies retrieves all of the services for a given host
 func GetHostServies(client *govmomi.Client, hostID string, timeout time.Duration) ([]types.HostService, error) {
 	// Find host and get reference to it.
 	host, err := hostsystem.FromID(client, hostID)
@@ -79,12 +93,14 @@ func GetHostServies(client *govmomi.Client, hostID string, timeout time.Duration
 
 		hss, err := host.ConfigManager().ServiceSystem(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("error while trying to obtain host service system for host %s: %s", host.Name(), err)
+			return nil, fmt.Errorf("error while trying to obtain host service system for host '%s': %s", host.Name(), err)
 		}
+
+		log.Printf("[INFO] querying services for host '%s'", hostID)
 
 		hsList, err := hss.Service(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("error while trying to obtain list of host services for host %s: %s", host.Name(), err)
+			return nil, fmt.Errorf("error while trying to obtain list of host services for host '%s': %s", host.Name(), err)
 		}
 
 		return hsList, nil
@@ -94,7 +110,7 @@ func GetHostServies(client *govmomi.Client, hostID string, timeout time.Duration
 }
 
 // SetServiceState sets the state of a given service
-func SetServiceState(client *govmomi.Client, hostID string, ss map[string]interface{}, timeout time.Duration) error {
+func SetServiceState(client *govmomi.Client, hostID string, ss map[string]interface{}, timeout time.Duration, running bool) error {
 	// Find host and get reference to it.
 	host, err := hostsystem.FromID(client, hostID)
 	if err != nil {
@@ -103,8 +119,8 @@ func SetServiceState(client *govmomi.Client, hostID string, ss map[string]interf
 
 	key := ss["key"].(string)
 	policy := ss["policy"].(string)
-	running := ss["running"].(bool)
 
+	// Checks to make sure key and policy are not empty
 	if key == "" {
 		return fmt.Errorf("service key must be set for host: '%s'", hostID)
 	}
@@ -121,105 +137,36 @@ func SetServiceState(client *govmomi.Client, hostID string, ss map[string]interf
 			return fmt.Errorf("error while trying to obtain host service system for host %s: %s", host.Name(), err)
 		}
 
+		// Start service if running is set, else stop service
 		if running {
+			log.Printf("[INFO] starting '%s' service for host '%s'", key, hostID)
+
 			if err = hss.Start(ctx, key); err != nil {
 				return fmt.Errorf("error while trying to start %s service for host %s: %s", key, host.Name(), err)
 			}
 		} else {
+			log.Printf("[INFO] stopping '%s' service for host '%s'", key, hostID)
+
 			if err = hss.Stop(ctx, key); err != nil {
-				return fmt.Errorf("error while trying to stop %s service for host %s.  Error: %s", key, host.Name(), err)
+				return fmt.Errorf("error while trying to stop %s service for host %s: %s", key, host.Name(), err)
 			}
 		}
 
+		log.Printf("[INFO] updating service '%s' with policy '%s' for host '%s'", key, policy, hostID)
+
 		if err = hss.UpdatePolicy(ctx, key, policy); err != nil {
-			return fmt.Errorf("error while trying to update policy for %s service for host %s.  Error: %s", key, host.Name(), err)
+			return fmt.Errorf("error while trying to update policy for %s service for host '%s': %s", key, host.Name(), err)
 		}
 
 		return nil
 	}
 
-	return fmt.Errorf("could not obtain config manager for host %s to set state for service %s", host.Name(), key)
+	return fmt.Errorf("could not obtain config manager for host '%s' to set state for service '%s'", host.Name(), key)
 }
 
-func UpdateServiceState(d *schema.ResourceData, client *govmomi.Client, isCreate bool) error {
-	var err error
-
-	hostID := d.Get("host_system_id").(string)
-
-	if isCreate {
-		d.SetId(hostID)
-		d.Set("host_system_id", hostID)
-		srvs := d.Get("service").([]interface{})
-
-		for _, v := range srvs {
-			srv := v.(map[string]interface{})
-
-			if err = SetServiceState(
-				client,
-				hostID,
-				srv,
-				provider.DefaultAPITimeout,
-			); err != nil {
-				return fmt.Errorf("error trying to set service state for host '%s' with key '%s': %s", hostID, srv["key"], err)
-			}
-		}
-
-	} else {
-		oldVal, newVal := d.GetChange("service")
-		oldList := oldVal.([]interface{})
-		newList := newVal.([]interface{})
-
-		log.Printf("old values: %+v", oldList)
-		log.Printf("new values: %+v", newList)
-
-		for _, v := range oldList {
-			oldSrv := v.(map[string]interface{})
-			found := false
-
-			for _, t := range newList {
-				newSrv := t.(map[string]interface{})
-
-				if newSrv["key"].(string) == oldSrv["key"].(string) {
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				oldSrv["running"] = false
-				oldSrv["policy"] = string(types.HostServicePolicyOff)
-
-				if err = SetServiceState(
-					client,
-					hostID,
-					oldSrv,
-					provider.DefaultAPITimeout,
-				); err != nil {
-					return fmt.Errorf("error trying to set service state for host '%s' with key '%s': %s", hostID, oldSrv["key"], err)
-				}
-			}
-		}
-
-		for _, v := range newList {
-			newSrv := v.(map[string]interface{})
-
-			if err = SetServiceState(
-				client,
-				hostID,
-				newSrv,
-				provider.DefaultAPITimeout,
-			); err != nil {
-				return fmt.Errorf("error trying to set service state for host '%s' with key '%s': %s", hostID, newSrv["key"], err)
-			}
-		}
-	}
-
-	return nil
-}
-
-func GetServiceKeyMsg(keyList []string) string {
+func GetServiceKeyMsg() string {
 	srvKeyOptMsg := "srvKeyOptMsg"
-	for _, key := range keyList {
+	for _, key := range ServiceKeyList {
 		srvKeyOptMsg += "'" + key + "', "
 	}
 

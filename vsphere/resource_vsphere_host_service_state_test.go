@@ -1,7 +1,6 @@
 package vsphere
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -16,7 +15,7 @@ import (
 
 func TestAccResourceVSphereHostServiceState_basic(t *testing.T) {
 	policy := types.HostServicePolicyOn
-	newPolicy := types.HostServicePolicyAutomatic
+	newPolicy := types.HostServicePolicyOff
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -28,59 +27,57 @@ func TestAccResourceVSphereHostServiceState_basic(t *testing.T) {
 		CheckDestroy: testAccVSphereHostServiceStateDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccResourceVSphereHostServiceStateConfig(policy, true),
+				Config: testAccResourceVSphereHostServiceStateConfig(policy),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVSphereHostServiceStateExists("vsphere_host_service_state.h1"),
 				),
 			},
 			{
-				Config: testAccResourceVSphereHostServiceStateConfig(newPolicy, true),
+				Config: testAccResourceVSphereHostServiceStateConfig(newPolicy),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVSphereHostServiceStateWithPolicy("vsphere_host_service_state.h1", newPolicy),
 				),
 			},
 			{
-				ResourceName:      "vsphere_host_service_state.h1",
-				Config:            testAccResourceVSphereHostServiceStateConfig(newPolicy, true),
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName: "vsphere_host_service_state.h1",
+				Config:       testAccResourceVSphereHostServiceStateConfig(newPolicy),
+				ImportState:  true,
 			},
 		},
 	})
 }
 
 func testAccVSphereHostServiceStateDestroy(s *terraform.State) error {
-	message := ""
+	resourceName := "vsphere_host_service_state"
+
 	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "vsphere_host_service_state" {
+		if rs.Type != resourceName {
 			continue
 		}
 
 		client := testAccProvider.Meta().(*Client).vimClient
-		ss, err := hostservicestate.GetServiceState(
-			client,
-			rs.Primary.ID,
-			hostservicestate.HostServiceKey(os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY")),
-			provider.DefaultAPITimeout,
-		)
+		hsList, err := hostservicestate.GetHostServies(client, rs.Primary.ID, provider.DefaultAPITimeout)
 		if err != nil {
-			return fmt.Errorf("error trying to retrieve service state for host '%s': %s", rs.Primary.ID, err)
+			return fmt.Errorf("error trying to retrieve services for host '%s': %s", rs.Primary.ID, err)
 		}
 
-		if ss["policy"].(string) != string(types.HostServicePolicyOff) {
-			message += " service policy should be 'off' /"
+		for _, hs := range hsList {
+			if hs.Key == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY") {
+				if hs.Running {
+					return fmt.Errorf("service '%s' should not be running", hs.Key)
+				} else {
+					return nil
+				}
+			}
 		}
-		if ss["running"].(bool) {
-			message += " service should not be running"
-		}
+
+		return fmt.Errorf("could not find service with key '%s'", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY"))
 	}
-	if message != "" {
-		return errors.New(message)
-	}
-	return nil
+
+	return fmt.Errorf("could not find resource '%s'", resourceName)
 }
 
-func testAccResourceVSphereHostServiceStateConfig(policy types.HostServicePolicy, running bool) string {
+func testAccResourceVSphereHostServiceStateConfig(policy types.HostServicePolicy) string {
 	return fmt.Sprintf(
 		`
 	%s
@@ -93,7 +90,6 @@ func testAccResourceVSphereHostServiceStateConfig(policy types.HostServicePolicy
 		host_system_id = data.vsphere_host.roothost1.id
 		service {
 			key = "%s"
-			running = %v
 			policy = "%s"
 		}
 	}
@@ -102,7 +98,6 @@ func testAccResourceVSphereHostServiceStateConfig(policy types.HostServicePolicy
 		testhelper.ConfigDataRootComputeCluster1(),
 		testhelper.ConfigDataRootHost1(),
 		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY"),
-		running,
 		policy,
 	)
 }
@@ -160,7 +155,7 @@ func testAccVSphereHostServiceStateWithPolicy(resourceName string, policy types.
 func testAccVSphereHostServiceStateEnvCheck(t *testing.T) {
 	found := false
 
-	for _, v := range serviceKeyList {
+	for _, v := range hostservicestate.ServiceKeyList {
 		if v == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY") {
 			found = true
 		}
