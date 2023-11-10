@@ -378,35 +378,6 @@ func checkHostLockdown(client *govmomi.Client, hostID, lockdownMode string) (boo
 	return modeString == lockdownMode, nil
 }
 
-func testAccVSphereHostConfigSSHService() string {
-	return fmt.Sprintf(`
-		%s
-
-		resource "vsphere_compute_cluster" "c1" {
-			name = "%s"
-			datacenter_id = data.vsphere_datacenter.rootdc1.id
-		}
-
-		resource "vsphere_host" "h1" {
-			# Useful only for connection
-			hostname = "%s"
-			username = "%s"
-			password = "%s"
-			cluster = vsphere_compute_cluster.c1.id
-			ssh_service {
-				running = true
-				policy = "on"
-			}
-		}
-		`,
-		testhelper.ConfigDataRootDC1(),
-		"TestCluster",
-		os.Getenv("ESX_HOSTNAME"),
-		os.Getenv("ESX_USERNAME"),
-		os.Getenv("ESX_PASSWORD"),
-	)
-}
-
 func testAccVSphereHostConfig() string {
 	return fmt.Sprintf(`
 	%s
