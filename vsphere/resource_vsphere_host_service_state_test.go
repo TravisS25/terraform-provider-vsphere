@@ -16,6 +16,7 @@ import (
 func TestAccResourceVSphereHostServiceState_basic(t *testing.T) {
 	policy := types.HostServicePolicyOn
 	newPolicy := types.HostServicePolicyOff
+	resourceName := "vsphere_host_service_state.h1"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -24,60 +25,68 @@ func TestAccResourceVSphereHostServiceState_basic(t *testing.T) {
 			testAccVSphereHostServiceStateEnvCheck(t)
 		},
 		Providers:    testAccProviders,
-		CheckDestroy: testAccVSphereHostServiceStateDestroy,
+		CheckDestroy: testAccVSphereHostServiceStateDestroy(resourceName),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccResourceVSphereHostServiceStateConfig(policy),
+				Config: testAccResourceVSphereTwoHostServiceStateConfig(policy),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVSphereHostServiceStateExists("vsphere_host_service_state.h1"),
+					testAccVSphereHostServiceStateValidateServicesRunning(resourceName, true),
 				),
 			},
 			{
-				Config: testAccResourceVSphereHostServiceStateConfig(newPolicy),
+				Config: testAccResourceVSphereOneHostServiceStateConfig(newPolicy),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVSphereHostServiceStateWithPolicy("vsphere_host_service_state.h1", newPolicy),
+					testAccVSphereHostServiceStateValidateServicesRunning(resourceName, false),
 				),
 			},
 			{
-				ResourceName: "vsphere_host_service_state.h1",
-				Config:       testAccResourceVSphereHostServiceStateConfig(newPolicy),
+				ResourceName: resourceName,
+				Config:       testAccResourceVSphereOneHostServiceStateConfig(newPolicy),
 				ImportState:  true,
 			},
 		},
 	})
 }
 
-func testAccVSphereHostServiceStateDestroy(s *terraform.State) error {
-	resourceName := "vsphere_host_service_state"
+func testAccVSphereHostServiceStateDestroy(name string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[name]
 
-	for _, rs := range s.RootModule().Resources {
-		if rs.Type != resourceName {
-			continue
+		if !ok {
+			return fmt.Errorf("%s key not found on the server", name)
 		}
-
 		client := testAccProvider.Meta().(*Client).vimClient
+
 		hsList, err := hostservicestate.GetHostServies(client, rs.Primary.ID, provider.DefaultAPITimeout)
 		if err != nil {
-			return fmt.Errorf("error trying to retrieve services for host '%s': %s", rs.Primary.ID, err)
+			return fmt.Errorf("error trying to get host services from host '%s'", err)
 		}
 
+		srvKey1Running := false
+		srvKey2Running := false
+
 		for _, hs := range hsList {
-			if hs.Key == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY") {
-				if hs.Running {
-					return fmt.Errorf("service '%s' should not be running", hs.Key)
-				} else {
-					return nil
-				}
+			if hs.Key == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1") && hs.Running {
+				srvKey1Running = true
+			}
+			if hs.Key == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2") && hs.Running {
+				srvKey2Running = true
 			}
 		}
 
-		return fmt.Errorf("could not find service with key '%s'", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY"))
-	}
+		if srvKey1Running {
+			return fmt.Errorf("service '%s' is still running", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1"))
+		}
 
-	return fmt.Errorf("could not find resource '%s'", resourceName)
+		if srvKey2Running {
+			return fmt.Errorf("service '%s' is still running", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2"))
+		}
+
+		return nil
+	}
 }
 
-func testAccResourceVSphereHostServiceStateConfig(policy types.HostServicePolicy) string {
+func testAccResourceVSphereOneHostServiceStateConfig(policy types.HostServicePolicy) string {
 	return fmt.Sprintf(
 		`
 	%s
@@ -97,12 +106,43 @@ func testAccResourceVSphereHostServiceStateConfig(policy types.HostServicePolicy
 		testhelper.ConfigDataRootDC1(),
 		testhelper.ConfigDataRootComputeCluster1(),
 		testhelper.ConfigDataRootHost1(),
-		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY"),
+		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1"),
 		policy,
 	)
 }
 
-func testAccVSphereHostServiceStateExists(name string) resource.TestCheckFunc {
+func testAccResourceVSphereTwoHostServiceStateConfig(policy types.HostServicePolicy) string {
+	return fmt.Sprintf(
+		`
+	%s
+
+	%s
+
+	%s
+
+	resource "vsphere_host_service_state" "h1" {
+		host_system_id = data.vsphere_host.roothost1.id
+		service {
+			key = "%s"
+			policy = "%s"
+		}
+		service {
+			key = "%s"
+			policy = "%s"
+		}
+	}
+	`,
+		testhelper.ConfigDataRootDC1(),
+		testhelper.ConfigDataRootComputeCluster1(),
+		testhelper.ConfigDataRootHost1(),
+		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1"),
+		policy,
+		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2"),
+		policy,
+	)
+}
+
+func testAccVSphereHostServiceStateValidateServicesRunning(name string, twoServicesRunning bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[name]
 
@@ -110,42 +150,34 @@ func testAccVSphereHostServiceStateExists(name string) resource.TestCheckFunc {
 			return fmt.Errorf("%s key not found on the server", name)
 		}
 		client := testAccProvider.Meta().(*Client).vimClient
-		key := hostservicestate.HostServiceKey(os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY"))
-		_, err := hostservicestate.GetServiceState(
-			client,
-			rs.Primary.ID,
-			key,
-			provider.DefaultAPITimeout,
-		)
+
+		hsList, err := hostservicestate.GetHostServies(client, rs.Primary.ID, provider.DefaultAPITimeout)
 		if err != nil {
-			return fmt.Errorf("error trying to retrieve service state for host '%s': %s", rs.Primary.ID, err)
+			return fmt.Errorf("error trying to get host services from host '%s'", err)
 		}
 
-		return nil
-	}
-}
+		srvKey1Running := false
+		srvKey2Running := false
 
-func testAccVSphereHostServiceStateWithPolicy(resourceName string, policy types.HostServicePolicy) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[resourceName]
-
-		if !ok {
-			return fmt.Errorf("%s key not found on the server", resourceName)
-		}
-		client := testAccProvider.Meta().(*Client).vimClient
-		key := hostservicestate.HostServiceKey(os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY"))
-		ss, err := hostservicestate.GetServiceState(
-			client,
-			rs.Primary.ID,
-			key,
-			provider.DefaultAPITimeout,
-		)
-		if err != nil {
-			return fmt.Errorf("error trying to retrieve service state for host '%s': %s", rs.Primary.ID, err)
+		for _, hs := range hsList {
+			if hs.Key == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1") && hs.Running {
+				srvKey1Running = true
+			}
+			if hs.Key == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2") && hs.Running {
+				srvKey2Running = true
+			}
 		}
 
-		if ss["policy"].(string) != string(policy) {
-			return fmt.Errorf("expected service state: %s; got %s", policy, ss["policy"].(string))
+		if !srvKey1Running {
+			return fmt.Errorf("service '%s' is not running", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1"))
+		}
+
+		if !srvKey2Running && twoServicesRunning {
+			return fmt.Errorf("service '%s' is not running", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2"))
+		}
+
+		if srvKey2Running && !twoServicesRunning {
+			return fmt.Errorf("service '%s' is running when it should be turned off", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2"))
 		}
 
 		return nil
@@ -153,15 +185,20 @@ func testAccVSphereHostServiceStateWithPolicy(resourceName string, policy types.
 }
 
 func testAccVSphereHostServiceStateEnvCheck(t *testing.T) {
-	found := false
+	count := 0
 
 	for _, v := range hostservicestate.ServiceKeyList {
-		if v == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY") {
-			found = true
+		if v == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1") {
+			count++
+		}
+		if v == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2") {
+			count++
 		}
 	}
 
-	if !found {
-		t.Fatalf("'TF_VAR_VSPHERE_SERVICE_KEY' env variable must be set to valid service key")
+	if count != 2 {
+		t.Fatalf("'TF_VAR_VSPHERE_SERVICE_KEY_1' and 'TF_VAR_VSPHERE_SERVICE_KEY_2' env variables must be set to valid service key")
+	} else if os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1") == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2") {
+		t.Fatalf("'TF_VAR_VSPHERE_SERVICE_KEY_1' and 'TF_VAR_VSPHERE_SERVICE_KEY_2' env variables can't be the same value")
 	}
 }
