@@ -32,7 +32,7 @@ const (
 	HostServiceKeyVLTD             HostServiceKey = "vltd"
 	HostServiceKeySyslogServer     HostServiceKey = "vmsyslogd"
 	HostServiceKeyHAAgent          HostServiceKey = "vmware-fdm"
-	HostServiceKeyVcenterAgent     HostServiceKey = "vpxa"
+	HostServiceKeyVCenterAgent     HostServiceKey = "vpxa"
 	HostServiceKeyXORG             HostServiceKey = "xorg"
 )
 
@@ -53,10 +53,16 @@ var (
 		string(HostServiceKeySLPD),
 		string(HostServiceKeySNMPD),
 		string(HostServiceKeyVLTD),
+		string(HostServiceKeyXORG),
+	}
+
+	// These are keys that terraform should NEVER manage and are keys that will both
+	// NOT be an option for "service" attribute in "vsphere_host_service_state" resource
+	// and will be excluded when querying the data source "vsphere_host_service_state"
+	ExcludeServiceKeyList = []string{
 		string(HostServiceKeySyslogServer),
 		string(HostServiceKeyHAAgent),
-		string(HostServiceKeyVcenterAgent),
-		string(HostServiceKeyXORG),
+		string(HostServiceKeyVCenterAgent),
 	}
 )
 

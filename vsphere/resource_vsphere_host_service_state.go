@@ -247,7 +247,15 @@ func resourceVSphereHostServiceStateImport(ctx context.Context, d *schema.Resour
 	log.Printf("[INFO] importing host service states")
 
 	for _, hostSrv := range hsList {
-		if hostSrv.Running {
+		foundExcludeKey := false
+
+		for _, excludeKey := range hostservicestate.ExcludeServiceKeyList {
+			if hostSrv.Key == excludeKey {
+				foundExcludeKey = true
+			}
+		}
+
+		if !foundExcludeKey && hostSrv.Running {
 			srvs = append(srvs, map[string]interface{}{
 				"key":    hostSrv.Key,
 				"policy": hostSrv.Policy,

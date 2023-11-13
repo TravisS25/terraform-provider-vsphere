@@ -89,9 +89,6 @@ The following arguments are supported:
         * `slpd`           - slpd
         * `snmpd`          - SNMP Server
         * `vltd`           - vltd
-        * `vmsyslogd`      - Syslog Server
-        * `vmware-fdm`     - vSphere High Availability Agent
-        * `vpxa`           - VMware vCenter Agent
         * `xorg`           - X.Org Server
     * `policy` - (Required) The policy to service to enable (case sensitive)
         * `on`

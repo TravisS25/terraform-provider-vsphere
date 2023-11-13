@@ -63,11 +63,21 @@ func dataSourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interfac
 	srvList := make([]interface{}, 0, len(hsList))
 
 	for _, hs := range hsList {
-		srvList = append(srvList, map[string]interface{}{
-			"key":     hs.Key,
-			"policy":  hs.Policy,
-			"running": hs.Running,
-		})
+		foundExcludeKey := false
+
+		for _, excludeKey := range hostservicestate.ExcludeServiceKeyList {
+			if hs.Key == excludeKey {
+				foundExcludeKey = true
+			}
+		}
+
+		if !foundExcludeKey {
+			srvList = append(srvList, map[string]interface{}{
+				"key":     hs.Key,
+				"policy":  hs.Policy,
+				"running": hs.Running,
+			})
+		}
 	}
 
 	d.SetId(hostID)
