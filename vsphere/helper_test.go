@@ -1170,17 +1170,6 @@ func RunSweepers() {
 	_ = dsSweep("")
 	_ = netSweep("")
 	_ = folderSweep("")
-	_ = vcenterSweep("")
-}
-
-func vcenterSweep(string) error {
-	client, err := sweepVSphereClient()
-
-	if err != nil {
-		return err
-	}
-
-	return testAccClientRemoveVcenterLicense(client)
 }
 
 func tagSweep(string) error {

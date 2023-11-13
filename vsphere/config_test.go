@@ -64,11 +64,6 @@ func init() {
 		Dependencies: nil,
 		F:            ccSweep,
 	})
-	resource.AddTestSweepers("vcenter", &resource.Sweeper{
-		Name:         "vcenter_cleanup",
-		Dependencies: nil,
-		F:            vcenterSweep,
-	})
 }
 
 func testAccClientPreCheck(t *testing.T) {
@@ -217,10 +212,10 @@ func TestAccClient_noPersistence(t *testing.T) {
 
 func TestAccClient_license(t *testing.T) {
 	testAccClientPreCheck(t)
-	testAccCheckEnvVariables(t, []string{"TF_VAR_VSPHERE_LICENSE"})
+	testAccCheckEnvVariables(t, []string{"TF_VAR_VSPHERE_LICENSE_KEY"})
 
 	c := testAccClientGenerateConfig()
-	c.LicenseKey = os.Getenv("TF_VAR_VSPHERE_LICENSE")
+	c.LicenseKey = os.Getenv("TF_VAR_VSPHERE_LICENSE_KEY")
 
 	client, err := c.Client()
 	if err != nil {

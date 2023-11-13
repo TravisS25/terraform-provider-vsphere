@@ -226,7 +226,8 @@ func (c *Config) Client() (*Client, error) {
 		return nil, fmt.Errorf("error persisting REST session to disk: %s", err)
 	}
 
-	if client.vimClient.ServiceContent.About.ApiType == "VirtualCenter" {
+	if client.vimClient.ServiceContent.About.ApiType == "VirtualCenter" &&
+		c.LicenseKey != "" {
 		if err = c.applyVCenterLicense(client.vimClient); err != nil {
 			return nil, fmt.Errorf("error trying to apply vcenter license: %s", err)
 		}
@@ -237,7 +238,7 @@ func (c *Config) Client() (*Client, error) {
 	return client, nil
 }
 
-// applyVCenterLicense will attempt to apply vcenter license if given
+// applyVCenterLicense will attempt to apply vcenter license
 func (c *Config) applyVCenterLicense(client *govmomi.Client) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
@@ -257,7 +258,7 @@ func (c *Config) applyVCenterLicense(client *govmomi.Client) error {
 		}
 	}
 
-	if !foundLicense && c.LicenseKey != "" {
+	if !foundLicense {
 		if _, err = lm.Add(ctx, c.LicenseKey, nil); err != nil {
 			return fmt.Errorf("error trying to add vcenter license to license manager: %s", err)
 		}
@@ -268,12 +269,10 @@ func (c *Config) applyVCenterLicense(client *govmomi.Client) error {
 		return fmt.Errorf("error trying to retrieve license assignment: %s", err)
 	}
 
-	log.Printf("[DEBUG] applying license key to vcenter: %s", c.VSphereServer)
+	log.Printf("[INFO] applying license key to vcenter: %s", c.VSphereServer)
 
-	if c.LicenseKey != "" {
-		if _, err = lam.Update(ctx, client.ServiceContent.About.InstanceUuid, c.LicenseKey, ""); err != nil {
-			return fmt.Errorf("error trying to update license key for vcenter host %s: %s", c.VSphereServer, err)
-		}
+	if _, err = lam.Update(ctx, client.ServiceContent.About.InstanceUuid, c.LicenseKey, ""); err != nil {
+		return fmt.Errorf("error trying to update license key for vcenter host %s: %s", c.VSphereServer, err)
 	}
 
 	return nil
