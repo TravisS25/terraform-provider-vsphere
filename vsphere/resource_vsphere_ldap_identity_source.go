@@ -93,7 +93,6 @@ func resourceVSphereLDAPIdentitySource() *schema.Resource {
 				Sensitive: true,
 			},
 
-
 			// Add tags schema
 			vSphereTagAttributeKey: tagsSchema(),
 
