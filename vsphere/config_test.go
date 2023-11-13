@@ -74,7 +74,8 @@ func testAccClientPreCheck(t *testing.T) {
 }
 
 func testAccClientRemoveVcenterLicense(client *Client) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
 	lam, err := license.NewManager(client.vimClient.Client).AssignmentManager(ctx)
 
 	if err != nil {
