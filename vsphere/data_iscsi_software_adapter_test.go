@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package vsphere
 
 import (
@@ -40,8 +43,12 @@ func TestAccDataSourceVSphereIscsiSoftwareAdapter_basic(t *testing.T) {
 func testAccDataSourceVSphereIscsiSoftwareAdapterConfig() string {
 	return fmt.Sprintf(
 		`
-		data "vsphere_iscsi_software_adapter" "h1" {
+		resource "vsphere_iscsi_software_adapter" "h1"{
 			host_system_id = "%s"
+		}
+
+		data "vsphere_iscsi_software_adapter" "h1" {
+			host_system_id = vsphere_iscsi_software_adapter.h1.host_system_id
 		}
 		`,
 		os.Getenv("TF_VAR_VSPHERE_HOST_SYSTEM_ID"),
