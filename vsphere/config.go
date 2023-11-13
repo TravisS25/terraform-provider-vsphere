@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/vmware/govmomi/sts"
 	"github.com/vmware/govmomi/vapi/rest"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -25,6 +26,7 @@ import (
 	"github.com/vmware/govmomi/session"
 	"github.com/vmware/govmomi/session/cache"
 	"github.com/vmware/govmomi/session/keepalive"
+	"github.com/vmware/govmomi/ssoadmin"
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/debug"
@@ -49,6 +51,9 @@ type Client struct {
 
 	// The REST client used for tags and content library.
 	restClient *rest.Client
+
+	// The SSO client
+	ssoClient *ssoadmin.Client
 
 	// client timeout for certain operations
 	timeout time.Duration
@@ -212,6 +217,41 @@ func (c *Config) Client() (*Client, error) {
 		client.vsanClient = vc
 	} else {
 		log.Printf("[DEBUG] Connected endpoint does not support vSAN service")
+	}
+
+	if isEligibleSSOEndpoint(client.vimClient) {
+		ssoclient, err := ssoadmin.NewClient(ctx, client.vimClient.Client)
+		if err != nil {
+			return nil, fmt.Errorf("error creating sso client: %s", err)
+		}
+
+		tokens, err := sts.NewClient(ctx, client.vimClient.Client)
+		if err != nil {
+			return nil, fmt.Errorf("error trying to get security token for sso client: %s", err)
+		}
+
+		req := sts.TokenRequest{
+			Certificate: client.vimClient.Certificate(),
+			Userinfo:    url.UserPassword(c.User, c.Password),
+		}
+
+		header := soap.Header{
+			Security: &sts.Signer{
+				Certificate: client.vimClient.Certificate(),
+			},
+		}
+
+		if header.Security, err = tokens.Issue(ctx, req); err != nil {
+			return nil, fmt.Errorf("error trying to set security header with token for sso client: %s", err)
+		}
+
+		if err = ssoclient.Login(client.vimClient.WithHeader(ctx, header)); err != nil {
+			return nil, fmt.Errorf("error trying to login to sso: %s", err)
+		}
+
+		client.ssoClient = ssoclient
+	} else {
+		log.Printf("[DEBUG] Connected endpoint does not support SSO service")
 	}
 
 	// Done, save sessions if we need to and return

@@ -122,6 +122,15 @@ func isEligibleVSANEndpoint(client *govmomi.Client) bool {
 	return true
 }
 
+// isEligibleSSOEndpoint is a meta-validation that is used on login to see if
+// the connected endpoint supports the CIS REST API, which we use for tags.
+func isEligibleSSOEndpoint(client *govmomi.Client) bool {
+	if err := viapi.ValidateVirtualCenter(client); err != nil {
+		return false
+	}
+	return true
+}
+
 // tagCategoryByName locates a tag category by name. It's used by the
 // vsphere_tag_category data source, and the resource importer.
 func tagCategoryByName(tm *tags.Manager, name string) (string, error) {
