@@ -12,13 +12,6 @@ import (
 	"github.com/vmware/govmomi/ssoadmin"
 	ssoadmin_types "github.com/vmware/govmomi/ssoadmin/types"
 
-	"github.com/vmware/govmomi"
-	"github.com/vmware/govmomi/sts"
-
-	"net/url"
-	"os"
-	"github.com/vmware/govmomi/vim25/soap"
-
 	"github.com/vmware/govmomi/ssoadmin/methods"
 
 )
@@ -81,17 +74,6 @@ func resourceVSphereLDAPIdentitySource() *schema.Resource {
 				Default: "",
 				Optional: true,
 			},
-			// these 2 params (username and password) will get removed when
-			// travis makes the client for us in provider.go
-			"vsphere_username": {
-				Type:     schema.TypeString,
-				Required: true,
-			},
-			"vsphere_password": {
-				Type:     schema.TypeString,
-				Required: true,
-				Sensitive: true,
-			},
 
 			// Add tags schema
 			vSphereTagAttributeKey: tagsSchema(),
@@ -103,16 +85,12 @@ func resourceVSphereLDAPIdentitySource() *schema.Resource {
 }
 
 func resourceVSphereLDAPIdentitySourceCreate(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client).vimClient
+	ssoclient := meta.(*Client).ssoClient
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
 
-	ssoclient, err := createSSOClient(client, d.Get("vsphere_username").(string), d.Get("vsphere_password").(string))
-	if err != nil {
-		return fmt.Errorf("error in create function creating ssoclient: %s", err)
-	}
 
-	_, err = identitySourceExists(ssoclient, d.Get("domain_name").(string))
+	_, err := identitySourceExists(ssoclient, d.Get("domain_name").(string))
 	// check if the domain we are about to create already exists (we don't want it to)
 	if err == nil {
 		return fmt.Errorf("the domain %s already exists", d.Get("domain_name").(string))
@@ -167,70 +145,66 @@ func identitySourceExists(ssoclient *ssoadmin.Client, id string) (*ssoadmin_type
 }
 
 // Hopefully this will be replaced by travis building the ssoclient within the provider first and we can remove all the env var hacky stuff here
-func createSSOClient(client *govmomi.Client, vcenter_username string, vcenter_password string) (*ssoadmin.Client, error) {
+// func createSSOClient(client *govmomi.Client, vcenter_username string, vcenter_password string) (*ssoadmin.Client, error) {
 
-	// if we are doing an import, we do not have access TF variables.tf vars e.g. cannot do a d.Get("var")
-	// this means the params for vcenter_username and vcenter_password will be blank here (for imports ONLY)
-	// - for creates, reads, and updates, we let TF check these for us.
-	if vcenter_username == "" {
-		if os.Getenv("TF_VAR_vsphere_username") == "" {
-			return nil, fmt.Errorf("please set your TF_VAR_vsphere_username to a username with administrative access to vcenter and retry")
-		}
-		vcenter_username = os.Getenv("TF_VAR_vsphere_username")
+// 	// if we are doing an import, we do not have access TF variables.tf vars e.g. cannot do a d.Get("var")
+// 	// this means the params for vcenter_username and vcenter_password will be blank here (for imports ONLY)
+// 	// - for creates, reads, and updates, we let TF check these for us.
+// 	if vcenter_username == "" {
+// 		if os.Getenv("TF_VAR_vsphere_username") == "" {
+// 			return nil, fmt.Errorf("please set your TF_VAR_vsphere_username to a username with administrative access to vcenter and retry")
+// 		}
+// 		vcenter_username = os.Getenv("TF_VAR_vsphere_username")
 
-	}
+// 	}
 
-	if vcenter_password == "" {
-		if os.Getenv("TF_VAR_vsphere_password") == "" {
-			return nil, fmt.Errorf("please set your TF_VAR_vsphere_password for the TF_VAR_vsphere_username with admin access and retry")
-		}
-		vcenter_password = os.Getenv("TF_VAR_vsphere_password")
-	}
+// 	if vcenter_password == "" {
+// 		if os.Getenv("TF_VAR_vsphere_password") == "" {
+// 			return nil, fmt.Errorf("please set your TF_VAR_vsphere_password for the TF_VAR_vsphere_username with admin access and retry")
+// 		}
+// 		vcenter_password = os.Getenv("TF_VAR_vsphere_password")
+// 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
-	defer cancel()
+// 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+// 	defer cancel()
 
-	ssoclient, err := ssoadmin.NewClient(ctx, client.Client)
-	if err != nil {
-		return nil, fmt.Errorf("error creating sso client: %s\n", err.Error())
-	}
+// 	ssoclient, err := ssoadmin.NewClient(ctx, client.Client)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("error creating sso client: %s\n", err.Error())
+// 	}
 
-	tokens, cerr := sts.NewClient(ctx, client.Client)
-	if cerr != nil {
-		return nil, fmt.Errorf("error trying to get token: %s", cerr)
-	}
+// 	tokens, cerr := sts.NewClient(ctx, client.Client)
+// 	if cerr != nil {
+// 		return nil, fmt.Errorf("error trying to get token: %s", cerr)
+// 	}
 
-	req := sts.TokenRequest{
-		Certificate: client.Certificate(),
-		Userinfo:    url.UserPassword(vcenter_username, vcenter_password),
-	}
+// 	req := sts.TokenRequest{
+// 		Certificate: client.Certificate(),
+// 		Userinfo:    url.UserPassword(vcenter_username, vcenter_password),
+// 	}
 
-	header := soap.Header{
-		Security: &sts.Signer{
-			Certificate: client.Certificate(),
-			//Token:       token,
-		},
-	}
+// 	header := soap.Header{
+// 		Security: &sts.Signer{
+// 			Certificate: client.Certificate(),
+// 			//Token:       token,
+// 		},
+// 	}
 
-	header.Security, cerr = tokens.Issue(ctx, req)
-	if cerr != nil {
-		return nil, fmt.Errorf("error trying to set security header: %s", cerr)
-	}
+// 	header.Security, cerr = tokens.Issue(ctx, req)
+// 	if cerr != nil {
+// 		return nil, fmt.Errorf("error trying to set security header: %s", cerr)
+// 	}
 
-	if err = ssoclient.Login(client.WithHeader(ctx, header)); err != nil {
-		return nil, fmt.Errorf("error trying to login: %s", cerr)
-	}
+// 	if err = ssoclient.Login(client.WithHeader(ctx, header)); err != nil {
+// 		return nil, fmt.Errorf("error trying to login: %s", cerr)
+// 	}
 
-	return ssoclient, nil
-}
+// 	return ssoclient, nil
+// }
 
 
 func resourceVSphereLDAPIdentitySourceRead(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client).vimClient
-	ssoclient, err := createSSOClient(client, d.Get("vsphere_username").(string), d.Get("vsphere_password").(string))
-	if err != nil {
-		return fmt.Errorf("error creating ssoclient: %s", err)
-	}
+	ssoclient := meta.(*Client).ssoClient
 
 	// if the user specifies a LDAP source to be created that already exists in vcenter this will fail to be created as there is a name conflict
 	identitySource, err := identitySourceExists(ssoclient, d.Id())
@@ -254,16 +228,13 @@ func resourceVSphereLDAPIdentitySourceRead(d *schema.ResourceData, meta interfac
 }
 
 func resourceVSphereLDAPIdentitySourceUpdate(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client).vimClient
+	ssoclient := meta.(*Client).ssoClient
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
 
-	ssoclient, err := createSSOClient(client, d.Get("vsphere_username").(string), d.Get("vsphere_password").(string))
-	if err != nil {
-		return fmt.Errorf("error in create function creating ssoclient: %s", err)
-	}
 
-	_, err = identitySourceExists(ssoclient, d.Get("domain_name").(string))
+
+	_, err := identitySourceExists(ssoclient, d.Get("domain_name").(string))
 	if err != nil {
 		// check if the domain we are about to create already exists (it should...) and we get no other errors
 		if errors.Is(err, identitynotfound) {
@@ -306,16 +277,12 @@ func resourceVSphereLDAPIdentitySourceUpdate(d *schema.ResourceData, meta interf
 }
 
 func resourceVSphereLDAPIdentitySourceDelete(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client).vimClient
+	ssoclient := meta.(*Client).ssoClient
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
 
-	ssoclient, err := createSSOClient(client, d.Get("vsphere_username").(string), d.Get("vsphere_password").(string))
-	if err != nil {
-		return fmt.Errorf("error in delete function creating ssoclient: %s", err)
-	}
 
-	_, err = identitySourceExists(ssoclient, d.Get("domain_name").(string))
+	_, err := identitySourceExists(ssoclient, d.Get("domain_name").(string))
 	if err != nil {
 		// check if the domain we are about to create already exists (it should...) and we get no other errors
 		if errors.Is(err, identitynotfound) {
@@ -341,17 +308,10 @@ func resourceVSphereLDAPIdentitySourceDelete(d *schema.ResourceData, meta interf
 // this is due to our inability to fetch the currently configured passwords that LDAP is using and TF will enforce the ones defined in it.
 func resourceVSphereLDAPIdentitySourceImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 
-	client := meta.(*Client).vimClient
-
-	// normally we would use d.Get("vsphere_username").(string), d.Get("vsphere_password").(string) here but the values are not accessible via an import
-	// so they will ALWAYS be blank strings
-	ssoclient, err := createSSOClient(client, "", "")
-	if err != nil {
-		return nil, fmt.Errorf("error creating ssoclient: %s\n", err)
-	}
+	ssoclient := meta.(*Client).ssoClient
 
 	// sanity check that the identity source actually exists in vcenter
-	_, err = identitySourceExists(ssoclient, d.Id())
+	_, err := identitySourceExists(ssoclient, d.Id())
 	// throw error if it does NOT exist or issue getting data via API
 	if err != nil {
 		return nil, fmt.Errorf("Import func - error checking if identity source exists: %s\n", err)
@@ -370,17 +330,10 @@ func resourceVSphereLDAPIdentitySourceImport(d *schema.ResourceData, meta interf
 func resourceVSphereLDAPIdentitySourceCustomDiff(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
 	// If the LDAP identity source does NOT exist in state yet...
 	if d.Id() == "" {
-		client := meta.(*Client).vimClient
-		_, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
-		defer cancel()
-
-		ssoclient, err := createSSOClient(client, d.Get("vsphere_username").(string), d.Get("vsphere_password").(string))
-		if err != nil {
-			return fmt.Errorf("error in delete function creating ssoclient: %s", err)
-		}
+		ssoclient := meta.(*Client).ssoClient
 
 		// check to see if the identitysource exists - this is what alerts you to a possible issue via 'terraform plan' instead of the 'plan' saying all is good and the 'apply' actually failing
-		_, err = identitySourceExists(ssoclient, d.Get("domain_name").(string))
+		_, err := identitySourceExists(ssoclient, d.Get("domain_name").(string))
 
 		if err == nil {
 			return fmt.Errorf("the input domain: %s already exists - considering running a 'terraform import'!", d.Get("domain_name").(string))
