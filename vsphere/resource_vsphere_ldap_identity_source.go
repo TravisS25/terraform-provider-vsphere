@@ -233,7 +233,6 @@ func resourceVSphereLDAPIdentitySourceRead(d *schema.ResourceData, meta interfac
 	}
 
 	// if the user specifies a LDAP source to be created that already exists in vcenter this will fail to be created as there is a name conflict
-	// You will not know this is going to error via a 'terraform plan' and it will only occur during a 'terraform apply'
 	identitySource, err := identitySourceExists(ssoclient, d.Id())
 	if err != nil {
 		return fmt.Errorf("Read func - error checking if existing ldap source exists: %s", err)
