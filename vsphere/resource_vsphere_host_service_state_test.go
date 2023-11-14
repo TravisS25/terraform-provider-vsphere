@@ -22,21 +22,21 @@ func TestAccResourceVSphereHostServiceState_basic(t *testing.T) {
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
-			testAccVSphereHostServiceStateEnvCheck(t)
+			testAccResourceVSphereHostServiceStateEnvCheck(t)
 		},
 		Providers:    testAccProviders,
-		CheckDestroy: testAccVSphereHostServiceStateDestroy(resourceName),
+		CheckDestroy: testAccResourceVSphereHostServiceStateDestroy(resourceName),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereTwoHostServiceStateConfig(policy),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVSphereHostServiceStateValidateServicesRunning(resourceName, true),
+					testAccResourceVSphereHostServiceStateValidateServicesRunning(resourceName, true),
 				),
 			},
 			{
 				Config: testAccResourceVSphereOneHostServiceStateConfig(newPolicy),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVSphereHostServiceStateValidateServicesRunning(resourceName, false),
+					testAccResourceVSphereHostServiceStateValidateServicesRunning(resourceName, false),
 				),
 			},
 			{
@@ -48,7 +48,7 @@ func TestAccResourceVSphereHostServiceState_basic(t *testing.T) {
 	})
 }
 
-func testAccVSphereHostServiceStateDestroy(name string) resource.TestCheckFunc {
+func testAccResourceVSphereHostServiceStateDestroy(name string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[name]
 
@@ -89,23 +89,21 @@ func testAccVSphereHostServiceStateDestroy(name string) resource.TestCheckFunc {
 func testAccResourceVSphereOneHostServiceStateConfig(policy types.HostServicePolicy) string {
 	return fmt.Sprintf(
 		`
-	%s
+		%s
 
-	%s
-
-	%s
-
-	resource "vsphere_host_service_state" "h1" {
-		host_system_id = data.vsphere_host.roothost1.id
-		service {
-			key = "%s"
-			policy = "%s"
+		resource "vsphere_host_service_state" "h1" {
+			host_system_id = data.vsphere_host.roothost1.id
+			service {
+				key = "%s"
+				policy = "%s"
+			}
 		}
-	}
-	`,
-		testhelper.ConfigDataRootDC1(),
-		testhelper.ConfigDataRootComputeCluster1(),
-		testhelper.ConfigDataRootHost1(),
+		`,
+		testhelper.CombineConfigs(
+			testhelper.ConfigDataRootDC1(),
+			testhelper.ConfigDataRootComputeCluster1(),
+			testhelper.ConfigDataRootHost1(),
+		),
 		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1"),
 		policy,
 	)
@@ -142,7 +140,7 @@ func testAccResourceVSphereTwoHostServiceStateConfig(policy types.HostServicePol
 	)
 }
 
-func testAccVSphereHostServiceStateValidateServicesRunning(name string, twoServicesRunning bool) resource.TestCheckFunc {
+func testAccResourceVSphereHostServiceStateValidateServicesRunning(name string, twoServicesRunning bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[name]
 
@@ -184,7 +182,15 @@ func testAccVSphereHostServiceStateValidateServicesRunning(name string, twoServi
 	}
 }
 
-func testAccVSphereHostServiceStateEnvCheck(t *testing.T) {
+func testAccResourceVSphereHostServiceStateEnvCheck(t *testing.T) {
+	envVars := []string{"TF_VAR_VSPHERE_DATACENTER", "TF_VAR_VSPHERE_CLUSTER", "TF_VAR_VSPHERE_ESXI1"}
+
+	for _, v := range envVars {
+		if os.Getenv(v) == "" {
+			t.Fatalf("Must set env variable '%s'", v)
+		}
+	}
+
 	count := 0
 
 	for _, v := range hostservicestate.ServiceKeyList {
@@ -201,4 +207,5 @@ func testAccVSphereHostServiceStateEnvCheck(t *testing.T) {
 	} else if os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1") == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2") {
 		t.Fatalf("'TF_VAR_VSPHERE_SERVICE_KEY_1' and 'TF_VAR_VSPHERE_SERVICE_KEY_2' env variables can't be the same value")
 	}
+
 }
