@@ -66,7 +66,7 @@ func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	adapter, err := iscsi.GetIscsiAdater(hssProps, hostID)
+	adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func resourceVSphereIscsiSoftwareAdapterUpdate(d *schema.ResourceData, meta inte
 
 	if d.HasChange("iscsi_name") {
 		_, iscsiName := d.GetChange("iscsi_name")
-		adapter, err := iscsi.GetIscsiAdater(hssProps, hostID)
+		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
 		if err != nil {
 			return err
 		}
@@ -134,7 +134,7 @@ func resourceVSphereIscsiSoftwareAdapterImport(ctx context.Context, d *schema.Re
 		return nil, err
 	}
 
-	if _, err = iscsi.GetIscsiAdater(hssProps, hostID); err != nil {
+	if _, err = iscsi.GetIscsiSoftwareAdater(hssProps, hostID); err != nil {
 		return nil, err
 	}
 
@@ -155,7 +155,7 @@ func iscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}, isDataSo
 	d.Set("host_system_id", hostID)
 
 	if hssProps.StorageDeviceInfo.SoftwareInternetScsiEnabled {
-		adapter, err := iscsi.GetIscsiAdater(hssProps, hostID)
+		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
 		if err != nil {
 			return err
 		}

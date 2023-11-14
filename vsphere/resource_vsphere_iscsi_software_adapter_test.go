@@ -67,7 +67,7 @@ func testAccVSphereIscsiSoftwareAdapterDestroy(s *terraform.State) error {
 			return err
 		}
 
-		if _, err = iscsi.GetIscsiAdater(hssProps, hostID); err == nil {
+		if _, err = iscsi.GetIscsiSoftwareAdater(hssProps, hostID); err == nil {
 			message = "iscsi software adapter still exists/enabled"
 		}
 	}
@@ -91,7 +91,7 @@ func testAccVSphereIscsiSoftwareAdapterExists(name string) resource.TestCheckFun
 			return err
 		}
 
-		if _, err = iscsi.GetIscsiAdater(hssProps, hostID); err != nil {
+		if _, err = iscsi.GetIscsiSoftwareAdater(hssProps, hostID); err != nil {
 			return err
 		}
 
@@ -113,7 +113,7 @@ func testAccVSphereIscsiSoftwareAdapterWithIscsiName(resourceName, iscsiName str
 			return err
 		}
 
-		adapter, err := iscsi.GetIscsiAdater(hssProps, hostID)
+		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
 		if err != nil {
 			return err
 		}

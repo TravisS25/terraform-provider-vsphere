@@ -1,9 +1,18 @@
 package vsphere
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/iscsi"
+	"github.com/vmware/govmomi/vim25/types"
+)
+
+const (
+	defaultIscsiAdapterID = "software"
 )
 
 func resourceVSphereIscsiTarget() *schema.Resource {
@@ -16,6 +25,7 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 			State: resourceVSphereIscsiTargetImport,
 		},
 
+		CustomizeDiff: resourceVSphereIscsiTargetCustomDiff,
 		Schema: map[string]*schema.Schema{
 			"host_system_id": {
 				Type:        schema.TypeString,
@@ -35,7 +45,7 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				ForceNew:    true,
-				Default:     "software",
+				Default:     defaultIscsiAdapterID,
 				Description: "Iscsi adapter the iscsi targets will be added to",
 			},
 			"target": {
@@ -62,7 +72,7 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 						"chap": {
 							Type:        schema.TypeList,
 							MaxItems:    1,
-							Description: "The chap credentials for iscis devices",
+							Description: "The chap credentials for iscsi devices",
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"method": {
@@ -119,18 +129,58 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 					},
 				},
 			},
-
-			// Add tags schema
-			vSphereTagAttributeKey: tagsSchema(),
-
-			// Custom Attributes
-			customattribute.ConfigKey: customattribute.ConfigSchema(),
 		},
 	}
 }
 
 func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) error {
-	//client := meta.(*Client).vimClient
+	client := meta.(*Client).vimClient
+	hostID := d.Get("host_system_id").(string)
+
+	hss, err := hostsystem.GetHostStorageSystemFromHost(client, hostID)
+	if err != nil {
+		return err
+	}
+
+	hssProps, err := hostsystem.HostStorageSystemProperties(hss)
+	if err != nil {
+		return err
+	}
+
+	targetList := d.Get("target").([]interface{})
+
+	if d.Get("discovery_type") == "static" {
+		targets := make([]types.HostInternetScsiHbaStaticTarget, 0, len(targetList))
+
+		for _, v := range targetList {
+			target := v.(map[string]interface{})
+			targets = append(targets, types.HostInternetScsiHbaStaticTarget{
+				Address:   target["ip"].(string),
+				Port:      target["port"].(int32),
+				IScsiName: target["target_name"].(string),
+			})
+		}
+
+		if err = iscsi.AddInternetScsiStaticTargets(client, hostID, hssProps, targets); err != nil {
+			return err
+		}
+	} else {
+		targets := make([]types.HostInternetScsiHbaSendTarget, 0, len(targetList))
+
+		for _, v := range targetList {
+			target := v.(map[string]interface{})
+			targets = append(targets, types.HostInternetScsiHbaSendTarget{
+				Address: target["ip"].(string),
+				Port:    target["port"].(int32),
+			})
+		}
+
+		if err = iscsi.AddInternetScsiSendTargets(client, hostID, hssProps, targets); err != nil {
+			return err
+		}
+	}
+
+	d.SetId(fmt.Sprintf("%s:%s", hostID))
 
 	return nil
 }
@@ -156,4 +206,26 @@ func resourceVSphereIscsiTargetImport(d *schema.ResourceData, meta interface{}) 
 	//client := meta.(*Client).vimClient
 
 	return []*schema.ResourceData{d}, nil
+}
+
+func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
+	errList := ""
+
+	if d.Get("discovery_type") == "static" {
+		targets := d.Get("target").([]interface{})
+
+		for _, v := range targets {
+			target := v.(map[string]interface{})
+
+			if target["target_name"] == "" {
+				errList += fmt.Sprintf("target with ip '%s' must set 'target_name' attribute when discovery type is 'static'\n", target["ip"])
+			}
+		}
+	}
+
+	if errList != "" {
+		return fmt.Errorf(errList)
+	}
+
+	return nil
 }

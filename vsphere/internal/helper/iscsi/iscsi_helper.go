@@ -15,11 +15,11 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
-// GetIscsiAdater is util helper that loops through storage adapters and grabs the
+// GetIscsiSoftwareAdater is util helper that loops through storage adapters and grabs the
 // iscsi software adapter
 //
 // Returns error if iscsi software adapter can not be found (usually due to adapter not being enabled)
-func GetIscsiAdater(hssProps *mo.HostStorageSystem, host string) (*types.HostInternetScsiHba, error) {
+func GetIscsiSoftwareAdater(hssProps *mo.HostStorageSystem, host string) (*types.HostInternetScsiHba, error) {
 	for _, v := range hssProps.StorageDeviceInfo.HostBusAdapter {
 		if strings.Contains(strings.ToLower(v.GetHostHostBusAdapter().Key), "internetscsihba") {
 			return v.(*types.HostInternetScsiHba), nil
@@ -67,6 +67,46 @@ func UpdateSoftwareInternetScsi(client *govmomi.Client, ref types.ManagedObjectR
 			msg = fmt.Sprintf(msg, "disable", host, err)
 		}
 		return fmt.Errorf(msg)
+	}
+
+	return nil
+}
+
+func AddInternetScsiStaticTargets(client *govmomi.Client, host string, hssProps *mo.HostStorageSystem, targets []types.HostInternetScsiHbaStaticTarget) error {
+	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
+	defer cancel()
+
+	hba, err := GetIscsiSoftwareAdater(hssProps, host)
+	if err != nil {
+		return err
+	}
+
+	if _, err := methods.AddInternetScsiStaticTargets(ctx, client, &types.AddInternetScsiStaticTargets{
+		This:           hssProps.Reference(),
+		IScsiHbaDevice: hba.Device,
+		Targets:        targets,
+	}); err != nil {
+		return fmt.Errorf("error trying to add static targets for iscsi software adapter: %s", err)
+	}
+
+	return nil
+}
+
+func AddInternetScsiSendTargets(client *govmomi.Client, host string, hssProps *mo.HostStorageSystem, targets []types.HostInternetScsiHbaSendTarget) error {
+	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
+	defer cancel()
+
+	hba, err := GetIscsiSoftwareAdater(hssProps, host)
+	if err != nil {
+		return err
+	}
+
+	if _, err := methods.AddInternetScsiSendTargets(ctx, client, &types.AddInternetScsiSendTargets{
+		This:           hssProps.Reference(),
+		IScsiHbaDevice: hba.Device,
+		Targets:        targets,
+	}); err != nil {
+		return fmt.Errorf("error trying to add send targets for iscsi software adapter: %s", err)
 	}
 
 	return nil
