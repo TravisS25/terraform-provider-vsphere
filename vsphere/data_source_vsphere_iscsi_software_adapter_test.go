@@ -10,19 +10,15 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/testhelper"
 )
-
-var testAccDataSourceVSphereIscsiSoftwareAdapterExpectedRegexp = regexp.MustCompile("^host-")
 
 func TestAccDataSourceVSphereIscsiSoftwareAdapter_basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
-			testAccCheckEnvVariables(
-				t,
-				[]string{"TF_VAR_VSPHERE_HOST_SYSTEM_ID"},
-			)
+			testAccDataSourceVSphereIscsiSoftwareAdapterEnvCheck(t)
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
@@ -32,7 +28,7 @@ func TestAccDataSourceVSphereIscsiSoftwareAdapter_basic(t *testing.T) {
 					resource.TestMatchResourceAttr(
 						"data.vsphere_iscsi_software_adapter.h1",
 						"id",
-						testAccDataSourceVSphereIscsiSoftwareAdapterExpectedRegexp,
+						regexp.MustCompile("^host-"),
 					),
 				),
 			},
@@ -43,14 +39,30 @@ func TestAccDataSourceVSphereIscsiSoftwareAdapter_basic(t *testing.T) {
 func testAccDataSourceVSphereIscsiSoftwareAdapterConfig() string {
 	return fmt.Sprintf(
 		`
-		resource "vsphere_iscsi_software_adapter" "h1"{
-			host_system_id = "%s"
+		%s
+
+		resource "vsphere_iscsi_software_adapter" "h1" {
+			host_system_id = data.vsphere_host.roothost1.id
 		}
 
 		data "vsphere_iscsi_software_adapter" "h1" {
 			host_system_id = vsphere_iscsi_software_adapter.h1.host_system_id
 		}
+
 		`,
-		os.Getenv("TF_VAR_VSPHERE_HOST_SYSTEM_ID"),
+		testhelper.CombineConfigs(
+			testhelper.ConfigDataRootDC1(),
+			testhelper.ConfigDataRootComputeCluster1(),
+			testhelper.ConfigDataRootHost1(),
+		),
 	)
+}
+func testAccDataSourceVSphereIscsiSoftwareAdapterEnvCheck(t *testing.T) {
+	envVars := []string{"TF_VAR_VSPHERE_DATACENTER", "TF_VAR_VSPHERE_CLUSTER", "TF_VAR_VSPHERE_ESXI1"}
+
+	for _, v := range envVars {
+		if os.Getenv(v) == "" {
+			t.Fatalf("Must set env variable '%s'", v)
+		}
+	}
 }

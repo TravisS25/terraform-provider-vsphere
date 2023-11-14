@@ -131,18 +131,16 @@ func testAccResourceVSphereIscsiSoftwareAdapterConfig(iscsiName string) string {
 		`
 	%s
 
-	%s
-
-	%s
-
 	resource "vsphere_iscsi_software_adapter" "h1" {
 		host_system_id = data.vsphere_host.roothost1.id
 		iscsi_name = "%s"
 	}
 	`,
-		testhelper.ConfigDataRootDC1(),
-		testhelper.ConfigDataRootComputeCluster1(),
-		testhelper.ConfigDataRootHost1(),
+		testhelper.CombineConfigs(
+			testhelper.ConfigDataRootDC1(),
+			testhelper.ConfigDataRootComputeCluster1(),
+			testhelper.ConfigDataRootHost1(),
+		),
 		iscsiName,
 	)
 }
