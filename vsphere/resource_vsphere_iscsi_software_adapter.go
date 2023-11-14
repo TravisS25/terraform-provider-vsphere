@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/iscsi"
@@ -154,8 +153,6 @@ func iscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}, isDataSo
 	}
 
 	d.Set("host_system_id", hostID)
-
-	spew.Dump(hssProps.StorageDeviceInfo)
 
 	if hssProps.StorageDeviceInfo.SoftwareInternetScsiEnabled {
 		adapter, err := iscsi.GetIscsiAdater(hssProps, hostID)
