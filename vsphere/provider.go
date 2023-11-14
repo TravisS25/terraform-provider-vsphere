@@ -103,6 +103,7 @@ func Provider() *schema.Provider {
 
 		ResourcesMap: map[string]*schema.Resource{
 			"vsphere_ldap_identity_source":                    resourceVSphereLDAPIdentitySource(),
+			"vsphere_ldap_group":                              resourceVSphereLDAPGroup(),
 			"vsphere_compute_cluster":                         resourceVSphereComputeCluster(),
 			"vsphere_compute_cluster_host_group":              resourceVSphereComputeClusterHostGroup(),
 			"vsphere_compute_cluster_vm_affinity_rule":        resourceVSphereComputeClusterVMAffinityRule(),
