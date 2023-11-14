@@ -120,7 +120,7 @@ func resourceVSphereLDAPGroupCreate(d *schema.ResourceData, meta interface{}) er
 	}
 
 	// add the resource into the terraform state
-	id := d.Get("vsphere_group").(string) + d.Get("ldap_group").(string)
+	id := d.Get("vsphere_group").(string) + ":" + d.Get("ldap_group").(string)
 	d.SetId(id)
 
 	return resourceVSphereLDAPGroupRead(d, meta)
