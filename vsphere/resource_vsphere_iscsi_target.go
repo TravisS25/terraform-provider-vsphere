@@ -11,10 +11,6 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
-const (
-	defaultIscsiAdapterID = "software"
-)
-
 func resourceVSphereIscsiTarget() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceVSphereIscsiTargetCreate,
@@ -33,6 +29,12 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 				ForceNew:    true,
 				Description: "ID of the host system to attach iscsi adapter to",
 			},
+			"adapter_id": {
+				Type:        schema.TypeString,
+				Required:    true,
+				ForceNew:    true,
+				Description: "Iscsi adapter the iscsi targets will be added to.  This should be in the form of 'vmhb<unique_name>'",
+			},
 			"discovery_type": {
 				Type:         schema.TypeString,
 				Optional:     true,
@@ -40,13 +42,6 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 				Default:      "dynamic",
 				Description:  "Determines what type of iscsi to create.  Valid options are 'dynamic' and 'static'",
 				ValidateFunc: validation.StringInSlice([]string{"dynamic", "static"}, true),
-			},
-			"adapter_id": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				ForceNew:    true,
-				Default:     defaultIscsiAdapterID,
-				Description: "Iscsi adapter the iscsi targets will be added to",
 			},
 			"target": {
 				Type:     schema.TypeList,
@@ -65,14 +60,16 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 							Description:  "Port of the iscsi target",
 							ValidateFunc: validation.IsPortNumber,
 						},
-						"target_name": {
+						"name": {
 							Type:        schema.TypeString,
 							Description: "The iqn of the storage device if iscsi type is 'static'",
 						},
+						// default - chap can be optional, if optinal, DO NOT inhreit and auth method should be none
 						"chap": {
 							Type:        schema.TypeList,
 							MaxItems:    1,
 							Description: "The chap credentials for iscsi devices",
+							Optional:    true,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"method": {
@@ -157,7 +154,7 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 			targets = append(targets, types.HostInternetScsiHbaStaticTarget{
 				Address:   target["ip"].(string),
 				Port:      target["port"].(int32),
-				IScsiName: target["target_name"].(string),
+				IScsiName: target["name"].(string),
 			})
 		}
 
@@ -180,7 +177,7 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 		}
 	}
 
-	d.SetId(fmt.Sprintf("%s:%s", hostID))
+	d.SetId(fmt.Sprintf("%s:%s", hostID, d.Get("adapter_id").(string)))
 
 	return nil
 }
@@ -210,22 +207,34 @@ func resourceVSphereIscsiTargetImport(d *schema.ResourceData, meta interface{}) 
 
 func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
 	errList := ""
+	targets := d.Get("target").([]interface{})
 
-	if d.Get("discovery_type") == "static" {
-		targets := d.Get("target").([]interface{})
+	// if d.Get("discovery_type") == "static" {
+	// 	for _, v := range targets {
+	// 		target := v.(map[string]interface{})
 
-		for _, v := range targets {
+	// 		if target["name"] == "" {
+	// 			errList += fmt.Sprintf("target with ip '%s' must set 'name' attribute when discovery type is 'static'\n", target["ip"])
+	// 		}
+	// 	}
+	// }
+
+	for _, v := range targets {
+		if d.Get("discovery_type") == "static" {
 			target := v.(map[string]interface{})
 
-			if target["target_name"] == "" {
-				errList += fmt.Sprintf("target with ip '%s' must set 'target_name' attribute when discovery type is 'static'\n", target["ip"])
+			if target["name"] == "" {
+				errList += fmt.Sprintf("target with ip '%s' must set 'name' attribute when discovery type is 'static'\n", target["ip"])
 			}
 		}
+
 	}
 
 	if errList != "" {
 		return fmt.Errorf(errList)
 	}
+
+	//client := meta.(*Client).vimClient
 
 	return nil
 }

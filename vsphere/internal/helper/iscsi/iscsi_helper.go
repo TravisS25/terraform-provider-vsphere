@@ -86,7 +86,7 @@ func AddInternetScsiStaticTargets(client *govmomi.Client, host string, hssProps 
 		IScsiHbaDevice: hba.Device,
 		Targets:        targets,
 	}); err != nil {
-		return fmt.Errorf("error trying to add static targets for iscsi software adapter: %s", err)
+		return fmt.Errorf("error trying to add static targets for iscsi adapter: %s", err)
 	}
 
 	return nil

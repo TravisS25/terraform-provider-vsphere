@@ -35,6 +35,11 @@ func resourceVSphereIscsiSoftwareAdapter() *schema.Resource {
 				Optional:    true,
 				Description: "The unique iqn name for the iscsi software adapter if enabled.  If left blank, vmware will generate the iqn name",
 			},
+			"adapter_id": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "Iscsi adapter name that is created when enabling software adapter.  This will be in the form of 'vmhb<unique_name>'",
+			},
 		},
 	}
 }
@@ -48,7 +53,6 @@ func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	d.SetId(hostID)
 	if err = iscsi.UpdateSoftwareInternetScsi(client, hss.Reference(), hostID, true); err != nil {
 		return err
 	}
@@ -70,6 +74,9 @@ func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta inte
 	if err != nil {
 		return err
 	}
+
+	d.SetId(fmt.Sprintf("%s:%s", hostID, adapter.Device))
+	d.Set("adapter_id", adapter.Device)
 
 	if name, ok := d.GetOk("iscsi_name"); ok {
 		if err = iscsi.UpdateIscsiName(hostID, adapter.Device, name.(string), client, hssProps.Reference()); err != nil {
@@ -134,11 +141,12 @@ func resourceVSphereIscsiSoftwareAdapterImport(ctx context.Context, d *schema.Re
 		return nil, err
 	}
 
-	if _, err = iscsi.GetIscsiSoftwareAdater(hssProps, hostID); err != nil {
+	adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
+	if err != nil {
 		return nil, err
 	}
 
-	d.SetId(hostID)
+	d.SetId(fmt.Sprintf("%s:%s", hostID, adapter.Device))
 	d.Set("host_system_id", hostID)
 	return []*schema.ResourceData{d}, nil
 }
@@ -152,7 +160,7 @@ func iscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}, isDataSo
 		return err
 	}
 
-	d.Set("host_system_id", hostID)
+	//d.Set("host_system_id", hostID)
 
 	if hssProps.StorageDeviceInfo.SoftwareInternetScsiEnabled {
 		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
