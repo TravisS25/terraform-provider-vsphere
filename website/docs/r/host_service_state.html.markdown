@@ -91,9 +91,9 @@ The following arguments are supported:
         * `vltd`           - vltd
         * `xorg`           - X.Org Server
     * `policy` - (Required) The policy to service to enable (case sensitive)
-        * `on`
-        * `off`
-        * `automatic`
+        * `on` - Start and stop with the host
+        * `off` - Start and stop manually
+        * `automatic` - Start and stop with port usage
 
 ## Attribute Reference
 
