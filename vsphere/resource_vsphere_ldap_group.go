@@ -77,6 +77,7 @@ func ldapGroupInVsphereGroupCheck(ssoclient *ssoadmin.Client, vsphere_group stri
 	// NOTE: This function accepts a 'search' string as the last param but it does not seem to do anything.
 	// It seems to always return the entire array of groups within the group you are searching in.
 	groups_in_group, err := ssoclient.FindGroupsInGroup(ctx, vsphere_group, ldap_group)
+
 	if err != nil {
 		return nil, fmt.Errorf("error locating groups in group. error: %s\n", err)
 	}
@@ -92,7 +93,7 @@ func ldapGroupInVsphereGroupCheck(ssoclient *ssoadmin.Client, vsphere_group stri
 				return &value, nil
 			}
 		}
-	} 
+	}
 	// if ldap_group is not currently a member of the vsphere_group...
 	return nil, nil
 }
@@ -138,10 +139,7 @@ func resourceVSphereLDAPGroupRead(d *schema.ResourceData, meta interface{}) erro
 		d.Set("ldap_group", group.Id.Name)
 		d.Set("domain_name", group.Id.Domain)
 
-	// this 'else' block applies only to TF imports - it sanity checks the ldap_group passed in IS actually a member of the given vsphere_group 
-	} else {
-		return fmt.Errorf("Read func - ldap_group '%s' is a member of vsphere_group '%s'", d.Get("ldap_group").(string), d.Get("vsphere_group").(string))
-	}
+	} 
 
 	return nil
 }
@@ -180,6 +178,7 @@ func resourceVSphereLDAPGroupDelete(d *schema.ResourceData, meta interface{}) er
 // NOTE: This import will create the resource within state successfully but the next 'terraform apply' WILL note some changes for it, even if there is nothing actually changing
 // this is due to our inability to fetch the currently configured passwords that LDAP is using and TF will enforce the ones defined in it.
 func resourceVSphereLDAPGroupImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	ssoclient := meta.(*Client).ssoClient
 
 	d.SetId(d.Id())
 
@@ -194,8 +193,20 @@ func resourceVSphereLDAPGroupImport(d *schema.ResourceData, meta interface{}) ([
 		return nil, fmt.Errorf("%s", error_msg)
 	}
 
-	d.Set("vsphere_group", id_split[0])
-	d.Set("ldap_group", id_split[1])
+	vsphere_group := id_split[0]
+	ldap_group := id_split[1]
+
+	group, err := ldapGroupInVsphereGroupCheck(ssoclient, vsphere_group, ldap_group)
+	if err != nil {
+		return nil, fmt.Errorf("import func - error checking if ldap_group '%s' is a member of vsphere_group '%s': %s", ldap_group, vsphere_group, err)
+	}
+	// sanity check that the ldap_group given IS actually a member of the given vsphere_group
+	if group == nil {
+		return nil, fmt.Errorf("import func - ldap_group '%s' is NOT a member of vsphere_group '%s'", ldap_group, vsphere_group)
+	}
+
+	d.Set("vsphere_group", vsphere_group)
+	d.Set("ldap_group", ldap_group)
 
 	return []*schema.ResourceData{d}, nil
 }
