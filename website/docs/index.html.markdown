@@ -111,6 +111,9 @@ The following arguments are used to configure the provider:
   specified with the `VSPHERE_VIM_KEEP_ALIVE` environment variable.
 * `api_timeout` - (Optional) Sets the number of minutes to wait for operations
   to complete. The default timeout is 5 minutes.
+* `license_key` - (Optional) Sets the given license key to connected client.
+  Can also be specified with the `VSPHERE_LICENSE_KEY` environment variable.
+  **NOTE:** The client must be vcenter instance
 
 ### Session Persistence Options
 

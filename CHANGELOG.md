@@ -1,4 +1,14 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 2.7.0 (November 16, 2023)
+
+FEATURES:
+* `resource/ldap_identity_source` : Initial release to manage LDAP identity sources for authentication
+* `resource/ldap_group` : Initial release to manage LDAP groups within vCenter
+* `resource/host_service_state` : Ability to manage service state and policy for esxi hosts
+
+IMPROVEMENTS:
+* `provider`: now manages vCenter license
+* `provider`: now implements ssoClient functionality used for various SSO resources added in this PR
 
 ## 2.6.0 (Unreleased)
 

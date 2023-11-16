@@ -45,6 +45,12 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("VSPHERE_ALLOW_UNVERIFIED_SSL", false),
 				Description: "If set, VMware vSphere client will permit unverifiable SSL certificates.",
 			},
+			"license_key": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("VSPHERE_LICENSE_KEY", nil),
+				Description: "If set, will apply license to vcenter instance",
+			},
 			"vcenter_server": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -102,6 +108,8 @@ func Provider() *schema.Provider {
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
+			"vsphere_ldap_identity_source":                    resourceVSphereLDAPIdentitySource(),
+			"vsphere_ldap_group":                              resourceVSphereLDAPGroup(),
 			"vsphere_compute_cluster":                         resourceVSphereComputeCluster(),
 			"vsphere_compute_cluster_host_group":              resourceVSphereComputeClusterHostGroup(),
 			"vsphere_compute_cluster_vm_affinity_rule":        resourceVSphereComputeClusterVMAffinityRule(),
@@ -141,6 +149,7 @@ func Provider() *schema.Provider {
 			"vsphere_vm_storage_policy":                       resourceVMStoragePolicy(),
 			"vsphere_role":                                    resourceVsphereRole(),
 			"vsphere_entity_permissions":                      resourceVsphereEntityPermissions(),
+			"vsphere_host_service_state":                      resourceVsphereHostServiceState(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -169,6 +178,7 @@ func Provider() *schema.Provider {
 			"vsphere_virtual_machine":            dataSourceVSphereVirtualMachine(),
 			"vsphere_vmfs_disks":                 dataSourceVSphereVmfsDisks(),
 			"vsphere_role":                       dataSourceVsphereRole(),
+			"vsphere_host_service_state":         dataSourceVSphereHostServiceState(),
 		},
 
 		ConfigureFunc: providerConfigure,

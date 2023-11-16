@@ -14,8 +14,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
-
+	"github.com/vmware/govmomi/sts"
+	"github.com/vmware/govmomi/license"
 	"github.com/vmware/govmomi/vapi/rest"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -25,6 +27,7 @@ import (
 	"github.com/vmware/govmomi/session"
 	"github.com/vmware/govmomi/session/cache"
 	"github.com/vmware/govmomi/session/keepalive"
+	"github.com/vmware/govmomi/ssoadmin"
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/debug"
@@ -49,6 +52,9 @@ type Client struct {
 
 	// The REST client used for tags and content library.
 	restClient *rest.Client
+
+	// The SSO client
+	ssoClient *ssoadmin.Client
 
 	// client timeout for certain operations
 	timeout time.Duration
@@ -98,6 +104,7 @@ type Config struct {
 	DebugPathRun    string
 	VimSessionPath  string
 	RestSessionPath string
+	LicenseKey      string
 	KeepAlive       int
 	APITimeout      time.Duration
 }
@@ -131,6 +138,7 @@ func NewConfig(d *schema.ResourceData) (*Config, error) {
 		Persist:         d.Get("persist_session").(bool),
 		VimSessionPath:  d.Get("vim_session_path").(string),
 		RestSessionPath: d.Get("rest_session_path").(string),
+		LicenseKey:      d.Get("license_key").(string),
 		KeepAlive:       d.Get("vim_keep_alive").(int),
 		APITimeout:      timeout,
 	}
@@ -214,6 +222,41 @@ func (c *Config) Client() (*Client, error) {
 		log.Printf("[DEBUG] Connected endpoint does not support vSAN service")
 	}
 
+	if isEligibleSSOEndpoint(client.vimClient) {
+		ssoclient, err := ssoadmin.NewClient(ctx, client.vimClient.Client)
+		if err != nil {
+			return nil, fmt.Errorf("error creating sso client: %s", err)
+		}
+
+		tokens, err := sts.NewClient(ctx, client.vimClient.Client)
+		if err != nil {
+			return nil, fmt.Errorf("error trying to get security token for sso client: %s", err)
+		}
+
+		req := sts.TokenRequest{
+			Certificate: client.vimClient.Certificate(),
+			Userinfo:    url.UserPassword(c.User, c.Password),
+		}
+
+		header := soap.Header{
+			Security: &sts.Signer{
+				Certificate: client.vimClient.Certificate(),
+			},
+		}
+
+		if header.Security, err = tokens.Issue(ctx, req); err != nil {
+			return nil, fmt.Errorf("error trying to set security header with token for sso client: %s", err)
+		}
+
+		if err = ssoclient.Login(client.vimClient.WithHeader(ctx, header)); err != nil {
+			return nil, fmt.Errorf("error trying to login to sso: %s", err)
+		}
+
+		client.ssoClient = ssoclient
+	} else {
+		log.Printf("[DEBUG] Connected endpoint does not support SSO service")
+	}
+
 	// Done, save sessions if we need to and return
 	if err := c.SaveVimClient(client.vimClient); err != nil {
 		return nil, fmt.Errorf("error persisting SOAP session to disk: %s", err)
@@ -222,9 +265,56 @@ func (c *Config) Client() (*Client, error) {
 		return nil, fmt.Errorf("error persisting REST session to disk: %s", err)
 	}
 
+	if client.vimClient.ServiceContent.About.ApiType == "VirtualCenter" &&
+		c.LicenseKey != "" {
+		if err = c.applyVCenterLicense(client.vimClient); err != nil {
+			return nil, fmt.Errorf("error trying to apply vcenter license: %s", err)
+		}
+	}
+
 	client.timeout = c.APITimeout
 
 	return client, nil
+}
+
+// applyVCenterLicense will attempt to apply vcenter license
+func (c *Config) applyVCenterLicense(client *govmomi.Client) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
+
+	lm := license.NewManager(client.Client)
+	licenseList, err := lm.List(ctx)
+	if err != nil {
+		return fmt.Errorf("error trying to get license list: %s", err)
+	}
+
+	foundLicense := false
+
+	for _, v := range licenseList {
+		if strings.EqualFold(v.LicenseKey, c.LicenseKey) {
+			foundLicense = true
+			break
+		}
+	}
+
+	if !foundLicense {
+		if _, err = lm.Add(ctx, c.LicenseKey, nil); err != nil {
+			return fmt.Errorf("error trying to add vcenter license to license manager: %s", err)
+		}
+	}
+
+	lam, err := lm.AssignmentManager(ctx)
+	if err != nil {
+		return fmt.Errorf("error trying to retrieve license assignment: %s", err)
+	}
+
+	log.Printf("[INFO] applying license key to vcenter: %s", c.VSphereServer)
+
+	if _, err = lam.Update(ctx, client.ServiceContent.About.InstanceUuid, c.LicenseKey, ""); err != nil {
+		return fmt.Errorf("error trying to update license key for vcenter host %s: %s", c.VSphereServer, err)
+	}
+
+	return nil
 }
 
 func (c *Config) restURL() (*cache.Session, error) {
