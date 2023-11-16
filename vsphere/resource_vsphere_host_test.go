@@ -429,7 +429,7 @@ func testaccvspherehostconfigRootfolder() string {
 
 func testaccvspherehostconfigEmptylicense() string {
 	return fmt.Sprintf(`
-	%s 
+	%s
 	resource "vsphere_host" "h1" {
 	  # Useful only for connection
 	  hostname = "%s"
@@ -455,18 +455,18 @@ func testaccvspherehostconfigImport() string {
 	  name = "%s"
 	  datacenter_id = data.vsphere_datacenter.rootdc1.id
 	}
-		
+
 	resource "vsphere_host" "h1" {
 	  # Useful only for connection
 	  hostname = "%s"
 	  username = "%s"
 	  password = "%s"
 	  thumbprint = data.vsphere_host_thumbprint.id
-	
+
 	  # Makes sense to update
 	  license = "%s"
 	  cluster = vsphere_compute_cluster.c1.id
-	}	  
+	}
 	`, testhelper.ConfigDataRootDC1(),
 		"TestCluster",
 		os.Getenv("ESX_HOSTNAME"),
@@ -483,17 +483,17 @@ func testaccvspherehostconfigConnection(connection bool) string {
 	  name = "%s"
 	  datacenter_id = data.vsphere_datacenter.rootdc1.id
 	}
-		
+
 	resource "vsphere_host" "h1" {
 	  hostname = "%s"
 	  username = "%s"
 	  password = "%s"
 	  thumbprint = data.vsphere_host_thumbprint.id
-	
+
 	  license = "%s"
 	  connected = "%s"
 	  cluster = vsphere_compute_cluster.c1.id
-	}	  
+	}
 	`, testhelper.ConfigDataRootDC1(),
 		"TestCluster",
 		os.Getenv("ESX_HOSTNAME"),
@@ -511,18 +511,18 @@ func testaccvspherehostconfigMaintenance(maintenance bool) string {
 	  name = "%s"
 	  datacenter_id = data.vsphere_datacenter.rootdc1.id
 	}
-		
+
 	resource "vsphere_host" "h1" {
 	  hostname = "%s"
 	  username = "%s"
 	  password = "%s"
 	  thumbprint = data.vsphere_host_thumbprint.id
-	
+
 	  license = "%s"
 	  connected = "true"
 	  maintenance = "%s"
 	  cluster = vsphere_compute_cluster.c1.id
-	}	  
+	}
 	`, testhelper.ConfigDataRootDC1(),
 		"TestCluster",
 		os.Getenv("ESX_HOSTNAME"),
@@ -540,19 +540,19 @@ func testaccvspherehostconfigLockdown(lockdown string) string {
 	  name = "%s"
 	  datacenter_id = data.vsphere_datacenter.rootdc1.id
 	}
-		
+
 	resource "vsphere_host" "h1" {
 	  hostname = "%s"
 	  username = "%s"
 	  password = "%s"
 	  thumbprint = data.vsphere_host_thumbprint.id
-	
+
 	  license = "%s"
 	  connected = "true"
 	  maintenance = "false"
 	  lockdown = "%s"
 	  cluster = vsphere_compute_cluster.c1.id
-	}	  
+	}
 	`, testhelper.ConfigDataRootDC1(),
 		"TestCluster",
 		os.Getenv("ESX_HOSTNAME"),
