@@ -14,9 +14,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
-
 	"github.com/vmware/govmomi/sts"
+	"github.com/vmware/govmomi/license"
 	"github.com/vmware/govmomi/vapi/rest"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -103,6 +104,7 @@ type Config struct {
 	DebugPathRun    string
 	VimSessionPath  string
 	RestSessionPath string
+	LicenseKey      string
 	KeepAlive       int
 	APITimeout      time.Duration
 }
@@ -136,6 +138,7 @@ func NewConfig(d *schema.ResourceData) (*Config, error) {
 		Persist:         d.Get("persist_session").(bool),
 		VimSessionPath:  d.Get("vim_session_path").(string),
 		RestSessionPath: d.Get("rest_session_path").(string),
+		LicenseKey:      d.Get("license_key").(string),
 		KeepAlive:       d.Get("vim_keep_alive").(int),
 		APITimeout:      timeout,
 	}
@@ -262,9 +265,56 @@ func (c *Config) Client() (*Client, error) {
 		return nil, fmt.Errorf("error persisting REST session to disk: %s", err)
 	}
 
+	if client.vimClient.ServiceContent.About.ApiType == "VirtualCenter" &&
+		c.LicenseKey != "" {
+		if err = c.applyVCenterLicense(client.vimClient); err != nil {
+			return nil, fmt.Errorf("error trying to apply vcenter license: %s", err)
+		}
+	}
+
 	client.timeout = c.APITimeout
 
 	return client, nil
+}
+
+// applyVCenterLicense will attempt to apply vcenter license
+func (c *Config) applyVCenterLicense(client *govmomi.Client) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
+
+	lm := license.NewManager(client.Client)
+	licenseList, err := lm.List(ctx)
+	if err != nil {
+		return fmt.Errorf("error trying to get license list: %s", err)
+	}
+
+	foundLicense := false
+
+	for _, v := range licenseList {
+		if strings.EqualFold(v.LicenseKey, c.LicenseKey) {
+			foundLicense = true
+			break
+		}
+	}
+
+	if !foundLicense {
+		if _, err = lm.Add(ctx, c.LicenseKey, nil); err != nil {
+			return fmt.Errorf("error trying to add vcenter license to license manager: %s", err)
+		}
+	}
+
+	lam, err := lm.AssignmentManager(ctx)
+	if err != nil {
+		return fmt.Errorf("error trying to retrieve license assignment: %s", err)
+	}
+
+	log.Printf("[INFO] applying license key to vcenter: %s", c.VSphereServer)
+
+	if _, err = lam.Update(ctx, client.ServiceContent.About.InstanceUuid, c.LicenseKey, ""); err != nil {
+		return fmt.Errorf("error trying to update license key for vcenter host %s: %s", c.VSphereServer, err)
+	}
+
+	return nil
 }
 
 func (c *Config) restURL() (*cache.Session, error) {

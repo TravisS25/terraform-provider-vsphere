@@ -45,6 +45,12 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("VSPHERE_ALLOW_UNVERIFIED_SSL", false),
 				Description: "If set, VMware vSphere client will permit unverifiable SSL certificates.",
 			},
+			"license_key": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("VSPHERE_LICENSE_KEY", nil),
+				Description: "If set, will apply license to vcenter instance",
+			},
 			"vcenter_server": {
 				Type:        schema.TypeString,
 				Optional:    true,
