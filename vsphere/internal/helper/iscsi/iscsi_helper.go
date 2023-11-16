@@ -8,11 +8,19 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+)
+
+const (
+	ChapResourceKey = "chap"
+	PortResourceKey = "port"
+	IPResourceKey   = "ip"
 )
 
 // GetIscsiSoftwareAdater is util helper that loops through storage adapters and grabs the
@@ -27,6 +35,16 @@ func GetIscsiSoftwareAdater(hssProps *mo.HostStorageSystem, host string) (*types
 	}
 
 	return nil, fmt.Errorf("could not find iscsi software adapter for host '%s'", host)
+}
+
+func GetIscsiAdater(hssProps *mo.HostStorageSystem, host, adapterID string) (types.BaseHostHostBusAdapter, error) {
+	for _, adapter := range hssProps.StorageDeviceInfo.HostBusAdapter {
+		if adapter.GetHostHostBusAdapter().Device == adapterID {
+			return adapter, nil
+		}
+	}
+
+	return nil, fmt.Errorf("could not find iscsi adapter device '%s' for host '%s'", adapterID, host)
 }
 
 // UpdateIscsiName is util helper that updates iscsi name for adapter
@@ -72,18 +90,19 @@ func UpdateSoftwareInternetScsi(client *govmomi.Client, ref types.ManagedObjectR
 	return nil
 }
 
-func AddInternetScsiStaticTargets(client *govmomi.Client, host string, hssProps *mo.HostStorageSystem, targets []types.HostInternetScsiHbaStaticTarget) error {
+func AddInternetScsiStaticTargets(
+	client *govmomi.Client,
+	host,
+	adapterID string,
+	hssProps *mo.HostStorageSystem,
+	targets []types.HostInternetScsiHbaStaticTarget,
+) error {
 	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
 	defer cancel()
 
-	hba, err := GetIscsiSoftwareAdater(hssProps, host)
-	if err != nil {
-		return err
-	}
-
 	if _, err := methods.AddInternetScsiStaticTargets(ctx, client, &types.AddInternetScsiStaticTargets{
 		This:           hssProps.Reference(),
-		IScsiHbaDevice: hba.Device,
+		IScsiHbaDevice: adapterID,
 		Targets:        targets,
 	}); err != nil {
 		return fmt.Errorf("error trying to add static targets for iscsi adapter: %s", err)
@@ -92,22 +111,106 @@ func AddInternetScsiStaticTargets(client *govmomi.Client, host string, hssProps 
 	return nil
 }
 
-func AddInternetScsiSendTargets(client *govmomi.Client, host string, hssProps *mo.HostStorageSystem, targets []types.HostInternetScsiHbaSendTarget) error {
+func AddInternetScsiSendTargets(
+	client *govmomi.Client,
+	host,
+	adapterID string,
+	hssProps *mo.HostStorageSystem,
+	targets []types.HostInternetScsiHbaSendTarget,
+) error {
 	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
 	defer cancel()
 
-	hba, err := GetIscsiSoftwareAdater(hssProps, host)
-	if err != nil {
-		return err
-	}
-
 	if _, err := methods.AddInternetScsiSendTargets(ctx, client, &types.AddInternetScsiSendTargets{
 		This:           hssProps.Reference(),
-		IScsiHbaDevice: hba.Device,
+		IScsiHbaDevice: adapterID,
 		Targets:        targets,
 	}); err != nil {
 		return fmt.Errorf("error trying to add send targets for iscsi software adapter: %s", err)
 	}
 
 	return nil
+}
+
+/////////////////////////
+// Schemas Helpers
+/////////////////////////
+
+func ChapSchema() *schema.Schema {
+	return &schema.Schema{
+		Type:        schema.TypeList,
+		MaxItems:    1,
+		Description: "The chap credentials for iscsi devices",
+		Optional:    true,
+		Elem: &schema.Resource{
+			Schema: map[string]*schema.Schema{
+				"method": {
+					Type:         schema.TypeString,
+					Default:      "unidirectional",
+					Description:  "Chap auth method.  Valid options are 'unidirectional' and 'bidirectional'",
+					ValidateFunc: validation.StringInSlice([]string{"unidirectional", "bidirectional"}, true),
+				},
+				"outgoing_creds": {
+					Type:        schema.TypeList,
+					Required:    true,
+					MaxItems:    1,
+					Description: "Outgoing creds for iscsi device",
+					Elem: &schema.Resource{
+						Schema: map[string]*schema.Schema{
+							"username": {
+								Type:        schema.TypeString,
+								Required:    true,
+								Description: "Username to auth against iscsi device",
+							},
+							"password": {
+								Type:        schema.TypeString,
+								Required:    true,
+								Description: "Password to auth against iscsi device",
+								Sensitive:   true,
+							},
+						},
+					},
+				},
+				"incoming_creds": {
+					Type: schema.TypeList,
+					//Required:    true,
+					MaxItems:    1,
+					Description: "Incoming creds for iscsi device to auth host",
+					Elem: &schema.Resource{
+						Schema: map[string]*schema.Schema{
+							"username": {
+								Type:        schema.TypeString,
+								Required:    true,
+								Description: "Username to auth against host",
+							},
+							"password": {
+								Type:        schema.TypeString,
+								Required:    true,
+								Description: "Password to auth against host",
+								Sensitive:   true,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func IPSchema() *schema.Schema {
+	return &schema.Schema{
+		Type:         schema.TypeString,
+		Required:     true,
+		Description:  "IP of the iscsi target",
+		ValidateFunc: validation.IsCIDR,
+	}
+}
+
+func PortSchema() *schema.Schema {
+	return &schema.Schema{
+		Type:         schema.TypeInt,
+		Default:      3260,
+		Description:  "Port of the iscsi target",
+		ValidateFunc: validation.IsPortNumber,
+	}
 }
