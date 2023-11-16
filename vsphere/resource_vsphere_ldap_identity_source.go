@@ -144,65 +144,6 @@ func identitySourceExists(ssoclient *ssoadmin.Client, id string) (*ssoadmin_type
 	return nil, identitynotfound
 }
 
-// Hopefully this will be replaced by travis building the ssoclient within the provider first and we can remove all the env var hacky stuff here
-// func createSSOClient(client *govmomi.Client, vcenter_username string, vcenter_password string) (*ssoadmin.Client, error) {
-
-// 	// if we are doing an import, we do not have access TF variables.tf vars e.g. cannot do a d.Get("var")
-// 	// this means the params for vcenter_username and vcenter_password will be blank here (for imports ONLY)
-// 	// - for creates, reads, and updates, we let TF check these for us.
-// 	if vcenter_username == "" {
-// 		if os.Getenv("TF_VAR_vsphere_username") == "" {
-// 			return nil, fmt.Errorf("please set your TF_VAR_vsphere_username to a username with administrative access to vcenter and retry")
-// 		}
-// 		vcenter_username = os.Getenv("TF_VAR_vsphere_username")
-
-// 	}
-
-// 	if vcenter_password == "" {
-// 		if os.Getenv("TF_VAR_vsphere_password") == "" {
-// 			return nil, fmt.Errorf("please set your TF_VAR_vsphere_password for the TF_VAR_vsphere_username with admin access and retry")
-// 		}
-// 		vcenter_password = os.Getenv("TF_VAR_vsphere_password")
-// 	}
-
-// 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
-// 	defer cancel()
-
-// 	ssoclient, err := ssoadmin.NewClient(ctx, client.Client)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error creating sso client: %s\n", err.Error())
-// 	}
-
-// 	tokens, cerr := sts.NewClient(ctx, client.Client)
-// 	if cerr != nil {
-// 		return nil, fmt.Errorf("error trying to get token: %s", cerr)
-// 	}
-
-// 	req := sts.TokenRequest{
-// 		Certificate: client.Certificate(),
-// 		Userinfo:    url.UserPassword(vcenter_username, vcenter_password),
-// 	}
-
-// 	header := soap.Header{
-// 		Security: &sts.Signer{
-// 			Certificate: client.Certificate(),
-// 			//Token:       token,
-// 		},
-// 	}
-
-// 	header.Security, cerr = tokens.Issue(ctx, req)
-// 	if cerr != nil {
-// 		return nil, fmt.Errorf("error trying to set security header: %s", cerr)
-// 	}
-
-// 	if err = ssoclient.Login(client.WithHeader(ctx, header)); err != nil {
-// 		return nil, fmt.Errorf("error trying to login: %s", cerr)
-// 	}
-
-// 	return ssoclient, nil
-// }
-
-
 func resourceVSphereLDAPIdentitySourceRead(d *schema.ResourceData, meta interface{}) error {
 	ssoclient := meta.(*Client).ssoClient
 
