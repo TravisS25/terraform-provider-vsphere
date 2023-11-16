@@ -18,10 +18,10 @@ func TestAccResourceVSphereLdapIdentitySource_basic(t *testing.T) {
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
-			testAccCheckEnvVariables(t, []string{"ldap_username", "ldap_password"})
+			testAccCheckEnvVariables(t, []string{"ldap_username", "ldap_password", "domain_name", "domain_alias", "user_base_dn", "group_base_dn", "primary_url"})
 		},
 		Providers:    testAccProviders,
-		CheckDestroy: testAccVSphereHostDestroy,
+		CheckDestroy: testAccVSphereLdapIdentitySourceDestroy,
 		Steps: []resource.TestStep{
 			{
 				// create the original testing resource
@@ -55,12 +55,9 @@ func testAccVSphereLdapIdentitySourceDestroy(s *terraform.State) error {
 		}
 		found = true
 
-		client := testAccProvider.Meta().(*Client).vimClient
+		ssoclient := testAccProvider.Meta().(*Client).ssoClient
 
-		ssoclient, err := createSSOClient(client, os.Getenv("VSPHERE_USER"), os.Getenv("VSPHERE_PASSWORD"))
-
-
-		_, err = identitySourceExists(ssoclient, rs.Primary.ID)
+		_, err := identitySourceExists(ssoclient, rs.Primary.ID)
 		if err == nil {
 			return fmt.Errorf("the ldap identity source still exists and it should have been destroyed")
 		}
@@ -82,24 +79,25 @@ func testAccResourceVSphereLdapIdentitySourceConfig(friendly_name string) string
 		resource "vsphere_ldap_identity_source" "test" {
 		  ldap_username = "%s"
 		  ldap_password = "%s"
-		  domain_name = "dev.encore.internal"
-		  domain_alias = "dev.encore.internal"
+		  domain_name = "%s"
+		  domain_alias = "%s"
 		  server_type      = "ActiveDirectory"
 		  friendly_name    = "%s"
-		  user_base_dn     = "dc=dev,dc=encore,dc=internal"
-		  group_base_dn    = "dc=dev,dc=encore,dc=internal"
-		  primary_url      = "ldap://dev.encore.internal"
+		  user_base_dn     = "%s"
+		  group_base_dn    = "%s"
+		  primary_url      = "%s"
 		  failover_url     = ""
-		  vsphere_username = "%s"
-		  vsphere_password = "%s"
 		}
 	`,
 		os.Getenv("ldap_username"),
 		os.Getenv("ldap_password"),
+		os.Getenv("domain_name"),
+		os.Getenv("domain_alias"),
                 friendly_name,
-		os.Getenv("VSPHERE_USER"),
-		os.Getenv("VSPHERE_PASSWORD"),
-	)
+		os.Getenv("user_base_dn"),
+		os.Getenv("group_base_dn"),
+		os.Getenv("primary_url"),
+ 	)
 }
 
 func testAccVSphereLdapIdentitySourceExists(name string) resource.TestCheckFunc {
@@ -109,11 +107,9 @@ func testAccVSphereLdapIdentitySourceExists(name string) resource.TestCheckFunc 
 		if !ok {
 			return fmt.Errorf("%s key not found on the server", name)
 		}
-		client := testAccProvider.Meta().(*Client).vimClient
+		ssoclient := testAccProvider.Meta().(*Client).ssoClient
 
-		ssoclient, err := createSSOClient(client, os.Getenv("VSPHERE_USER"), os.Getenv("VSPHERE_PASSWORD"))
-
-		_, err = identitySourceExists(ssoclient, rs.Primary.ID)
+		_, err := identitySourceExists(ssoclient, rs.Primary.ID)
 		if err != nil {
 			if errors.Is(err, identitynotfound) {
 				return fmt.Errorf("The identity source that was supposed to be created could not be found")
@@ -135,9 +131,7 @@ func testAccVSphereLdapIdentitySourceWithFriendlyName(resource_name string, frie
 		if !ok {
 			return fmt.Errorf("%s key not found on the server", resource_name)
 		}
-		client := testAccProvider.Meta().(*Client).vimClient
-
-		ssoclient, err := createSSOClient(client, os.Getenv("VSPHERE_USER"), os.Getenv("VSPHERE_PASSWORD"))
+		ssoclient := testAccProvider.Meta().(*Client).ssoClient
 
 		identitysources, err := ssoclient.IdentitySources(ctx)
 		if err != nil {
