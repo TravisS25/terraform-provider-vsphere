@@ -14,7 +14,7 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceVSphereIscsiTargetCreate,
 		Read:   resourceVSphereIscsiTargetRead,
-		Update: resourceVSphereIscsiTargetUpdate,
+		//Update: resourceVSphereIscsiTargetUpdate,
 		Delete: resourceVSphereIscsiTargetDelete,
 		Importer: &schema.ResourceImporter{
 			State: resourceVSphereIscsiTargetImport,
@@ -35,8 +35,7 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 				Description: "Iscsi adapter the iscsi targets will be added to.  This should be in the form of 'vmhb<unique_name>'",
 			},
 			"send_target": {
-				Type: schema.TypeSet,
-				//Required: true,
+				Type:     schema.TypeSet,
 				Optional: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
@@ -169,11 +168,12 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	targetList := d.Get("target").(*schema.Set).List()
+	sendTargets := d.Get("send_target").(*schema.Set).List()
+	staticTargets := d.Get("static_target").(*schema.Set).List()
 	inherited := false
 
-	for _, v := range targetList {
-		target := v.(map[string]interface{})
+	for _, sendTarget := range sendTargets {
+		target := sendTarget.(map[string]interface{})
 		authSettings := &types.HostInternetScsiHbaAuthenticationProperties{
 			ChapInherited:       &inherited,
 			MutualChapInherited: &inherited,
@@ -193,41 +193,61 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 			}
 		}
 
-		if d.Get("discovery_type") == "static" {
-			targets := make([]types.HostInternetScsiHbaStaticTarget, 0, len(targetList))
-			targets = append(targets, types.HostInternetScsiHbaStaticTarget{
-				Address:                  target["ip"].(string),
-				Port:                     target["port"].(int32),
-				IScsiName:                target["name"].(string),
-				AuthenticationProperties: authSettings,
-			})
+		targets := make([]types.HostInternetScsiHbaSendTarget, 0, len(sendTargets))
+		targets = append(targets, types.HostInternetScsiHbaSendTarget{
+			Address:                  target["ip"].(string),
+			Port:                     target["port"].(int32),
+			AuthenticationProperties: authSettings,
+		})
 
-			if err = iscsi.AddInternetScsiStaticTargets(
-				client,
-				hostID,
-				d.Get("adapter_id").(string),
-				hssProps,
-				targets,
-			); err != nil {
-				return err
-			}
-		} else {
-			targets := make([]types.HostInternetScsiHbaSendTarget, 0, len(targetList))
-			targets = append(targets, types.HostInternetScsiHbaSendTarget{
-				Address:                  target["ip"].(string),
-				Port:                     target["port"].(int32),
-				AuthenticationProperties: authSettings,
-			})
+		if err = iscsi.AddInternetScsiSendTargets(
+			client,
+			hostID,
+			d.Get("adapter_id").(string),
+			hssProps,
+			targets,
+		); err != nil {
+			return err
+		}
+	}
 
-			if err = iscsi.AddInternetScsiSendTargets(
-				client,
-				hostID,
-				d.Get("adapter_id").(string),
-				hssProps,
-				targets,
-			); err != nil {
-				return err
+	for _, staticTarget := range staticTargets {
+		target := staticTarget.(map[string]interface{})
+		authSettings := &types.HostInternetScsiHbaAuthenticationProperties{
+			ChapInherited:       &inherited,
+			MutualChapInherited: &inherited,
+		}
+
+		if c, ok := target["chap"]; ok {
+			chap := c.([]interface{})
+			outgoingCreds := chap[0].(map[string]interface{})["outgoing_creds"].([]interface{})[0].(map[string]interface{})
+
+			authSettings.ChapName = outgoingCreds["username"].(string)
+			authSettings.ChapSecret = outgoingCreds["password"].(string)
+
+			if incomingCredsList, ok := chap[0].(map[string]interface{})["incoming_creds"]; ok {
+				incomingCreds := incomingCredsList.([]interface{})[0].(map[string]interface{})
+				authSettings.MutualChapName = incomingCreds["username"].(string)
+				authSettings.MutualChapSecret = incomingCreds["password"].(string)
 			}
+		}
+
+		targets := make([]types.HostInternetScsiHbaStaticTarget, 0, len(staticTargets))
+		targets = append(targets, types.HostInternetScsiHbaStaticTarget{
+			Address:                  target["ip"].(string),
+			Port:                     target["port"].(int32),
+			IScsiName:                target["name"].(string),
+			AuthenticationProperties: authSettings,
+		})
+
+		if err = iscsi.AddInternetScsiStaticTargets(
+			client,
+			hostID,
+			d.Get("adapter_id").(string),
+			hssProps,
+			targets,
+		); err != nil {
+			return err
 		}
 	}
 
@@ -252,9 +272,8 @@ func resourceVSphereIscsiTargetRead(d *schema.ResourceData, meta interface{}) er
 	}
 
 	adapter := baseAdapter.(*types.HostInternetScsiHba)
-
-	sendTargets := make([]map[string]interface{}, 0, len(adapter.ConfiguredSendTarget))
-	staticTargets := make([]map[string]interface{}, 0, len(adapter.ConfiguredStaticTarget))
+	sendTargets := make([]interface{}, 0, len(adapter.ConfiguredSendTarget))
+	staticTargets := make([]interface{}, 0, len(adapter.ConfiguredStaticTarget))
 
 	for _, sendTarget := range adapter.ConfiguredSendTarget {
 		target := map[string]interface{}{
@@ -280,19 +299,81 @@ func resourceVSphereIscsiTargetRead(d *schema.ResourceData, meta interface{}) er
 			target["chap"] = c
 		}
 
-		sendTargets = append(sendTargets, target)
+		staticTargets = append(staticTargets, target)
 	}
 
-	return nil
-}
-
-func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) error {
-	//client := meta.(*Client).vimClient
+	d.Set("send_target", sendTargets)
+	d.Set("static_target", staticTargets)
 
 	return nil
 }
+
+// func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) error {
+// 	client := meta.(*Client).vimClient
+// 	hostID := d.Get("host_system_id").(string)
+// 	adapterID := d.Get("adapter_id").(string)
+
+// 	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	baseAdapter, err := iscsi.GetIscsiAdater(hssProps, hostID, adapterID)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	adapter := baseAdapter.(*types.HostInternetScsiHba)
+// 	inherited := false
+
+// 	if d.HasChange("send_target") {
+// 		sendTargets := d.Get("send_target").(*schema.Set).List()
+
+// 		for _, sendTarget := range sendTargets {
+// 			target := sendTarget.(map[string]interface{})
+// 			authSettings := &types.HostInternetScsiHbaAuthenticationProperties{
+// 				ChapInherited:       &inherited,
+// 				MutualChapInherited: &inherited,
+// 			}
+
+// 			if c, ok := target["chap"]; ok {
+// 				chap := c.([]interface{})
+// 				outgoingCreds := chap[0].(map[string]interface{})["outgoing_creds"].([]interface{})[0].(map[string]interface{})
+
+// 				authSettings.ChapName = outgoingCreds["username"].(string)
+// 				authSettings.ChapSecret = outgoingCreds["password"].(string)
+
+// 				if incomingCredsList, ok := chap[0].(map[string]interface{})["incoming_creds"]; ok {
+// 					incomingCreds := incomingCredsList.([]interface{})[0].(map[string]interface{})
+// 					authSettings.MutualChapName = incomingCreds["username"].(string)
+// 					authSettings.MutualChapSecret = incomingCreds["password"].(string)
+// 				}
+// 			}
+
+// 			targets := make([]types.HostInternetScsiHbaSendTarget, 0, len(sendTargets))
+// 			targets = append(targets, types.HostInternetScsiHbaSendTarget{
+// 				Address:                  target["ip"].(string),
+// 				Port:                     target["port"].(int32),
+// 				AuthenticationProperties: authSettings,
+// 			})
+
+// 			if err = iscsi.AddInternetScsiSendTargets(
+// 				client,
+// 				hostID,
+// 				d.Get("adapter_id").(string),
+// 				hssProps,
+// 				targets,
+// 			); err != nil {
+// 				return err
+// 			}
+// 		}
+// 	}
+
+// 	return nil
+// }
 
 func resourceVSphereIscsiTargetDelete(d *schema.ResourceData, meta interface{}) error {
+	//client := meta.(*Client).vimClient
 
 	return nil
 }
