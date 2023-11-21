@@ -182,6 +182,7 @@ func Provider() *schema.Provider {
 			"vsphere_role":                       dataSourceVsphereRole(),
 			"vsphere_host_service_state":         dataSourceVSphereHostServiceState(),
 			"vsphere_iscsi_software_adapter":     dataSourceVSphereIscsiSoftwareAdapter(),
+			"vsphere_iscsi_target":               dataSourceVSphereIscsiTarget(),
 		},
 
 		ConfigureFunc: providerConfigure,

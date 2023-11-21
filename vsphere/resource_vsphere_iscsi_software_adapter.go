@@ -160,8 +160,6 @@ func iscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}, isDataSo
 		return err
 	}
 
-	//d.Set("host_system_id", hostID)
-
 	if hssProps.StorageDeviceInfo.SoftwareInternetScsiEnabled {
 		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
 		if err != nil {

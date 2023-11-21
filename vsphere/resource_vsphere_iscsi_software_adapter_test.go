@@ -119,7 +119,11 @@ func testAccVSphereIscsiSoftwareAdapterWithIscsiName(resourceName, iscsiName str
 		}
 
 		if adapter.IScsiName != iscsiName {
-			return fmt.Errorf("iscsi adapter name invalid.  current value: %s; expected value: %s", adapter.IScsiName, iscsiName)
+			return fmt.Errorf(
+				"iscsi adapter name invalid.  current value: %s; expected value: %s",
+				adapter.IScsiName,
+				iscsiName,
+			)
 		}
 
 		return nil

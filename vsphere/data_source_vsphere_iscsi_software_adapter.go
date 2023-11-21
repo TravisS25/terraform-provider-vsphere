@@ -19,7 +19,7 @@ func dataSourceVSphereIscsiSoftwareAdapter() *schema.Resource {
 			},
 			"iscsi_name": {
 				Type:        schema.TypeString,
-				Description: "The host to gather iscsi information",
+				Description: "The name of the iscsi software adapter for host",
 				Computed:    true,
 			},
 		},
