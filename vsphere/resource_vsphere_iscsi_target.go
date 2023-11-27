@@ -3,12 +3,12 @@ package vsphere
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/iscsi"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -89,7 +89,6 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 		sendTarget := v.(map[string]interface{})
 		outgoingCreds := iscsi.ExtractChapCredsFromTarget(sendTarget, true)
 		incomingCreds := iscsi.ExtractChapCredsFromTarget(sendTarget, false)
-
 		authSettings := &types.HostInternetScsiHbaAuthenticationProperties{}
 
 		if len(outgoingCreds["username"].(string)) > 0 {
@@ -206,7 +205,7 @@ func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) 
 		oldList := oldVal.(*schema.Set).List()
 		newList := newVal.(*schema.Set).List()
 
-		removeTargets, addTargets := iscsi.ExtractTargetUpdates(oldList, newList)
+		removeTargets, addTargets := structure.ExtractResourceDiff(oldList, newList)
 		hbaRemoveTargets := make([]types.HostInternetScsiHbaSendTarget, 0, len(removeTargets))
 
 		for _, v := range removeTargets {
@@ -276,7 +275,7 @@ func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) 
 		oldList := oldVal.(*schema.Set).List()
 		newList := newVal.(*schema.Set).List()
 
-		removeTargets, addTargets := iscsi.ExtractTargetUpdates(oldList, newList)
+		removeTargets, addTargets := structure.ExtractResourceDiff(oldList, newList)
 		hbaRemoveTargets := make([]types.HostInternetScsiHbaStaticTarget, 0, len(removeTargets))
 
 		for _, v := range removeTargets {
@@ -451,13 +450,11 @@ func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.Resourc
 	}
 
 	if staticOk {
-		dupMap := map[string]bool{}
+		dupMap := map[string]struct{}{}
 		strFmt := "%s:%s:%s"
 
 		for _, v := range staticTargets.(*schema.Set).List() {
 			st := v.(map[string]interface{})
-
-			log.Printf("static foobar: %+v\n", st)
 
 			if _, ok := dupMap[fmt.Sprintf(strFmt, st["ip"], st["port"], st["name"])]; ok {
 				return fmt.Errorf(
@@ -467,18 +464,17 @@ func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.Resourc
 					st["name"],
 				)
 			} else {
-				dupMap[fmt.Sprintf(strFmt, st["ip"], st["port"], st["name"])] = true
+				dupMap[fmt.Sprintf(strFmt, st["ip"], st["port"], st["name"])] = struct{}{}
 			}
 		}
 	}
 
 	if sendOK {
-		dupMap := map[string]bool{}
+		dupMap := map[string]struct{}{}
 		strFmt := "%s:%s"
 
 		for _, v := range sendTargets.(*schema.Set).List() {
 			st := v.(map[string]interface{})
-			log.Printf("send foobar: %+v\n", st)
 
 			if _, ok := dupMap[fmt.Sprintf(strFmt, st["ip"], st["port"])]; ok {
 				return fmt.Errorf(
@@ -487,7 +483,7 @@ func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.Resourc
 					st["port"],
 				)
 			} else {
-				dupMap[fmt.Sprintf(strFmt, st["ip"], st["port"])] = true
+				dupMap[fmt.Sprintf(strFmt, st["ip"], st["port"])] = struct{}{}
 			}
 		}
 	}

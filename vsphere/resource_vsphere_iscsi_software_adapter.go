@@ -6,6 +6,7 @@ package vsphere
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
@@ -135,7 +136,8 @@ func resourceVSphereIscsiSoftwareAdapterDelete(d *schema.ResourceData, meta inte
 
 func resourceVSphereIscsiSoftwareAdapterImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	client := meta.(*Client).vimClient
-	hostID := d.Id()
+	idSplit := strings.Split(d.Id(), ":")
+	hostID := idSplit[0]
 	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
 	if err != nil {
 		return nil, err

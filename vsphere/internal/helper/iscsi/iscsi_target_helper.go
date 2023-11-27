@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"reflect"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -19,12 +18,17 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
+// Globally defined resource schema keys
 const (
 	ChapResourceKey = "chap"
 	PortResourceKey = "port"
 	IPResourceKey   = "ip"
 )
 
+// GetIscsiAdater will retrieve storage adapter based on the host and adapter id passed
+//
+// The returned type is only an interface of a base adapter so it is up to the caller of
+// this function to cast it to the correct type
 func GetIscsiAdater(hssProps *mo.HostStorageSystem, host, adapterID string) (types.BaseHostHostBusAdapter, error) {
 	for _, adapter := range hssProps.StorageDeviceInfo.HostBusAdapter {
 		if adapter.GetHostHostBusAdapter().Device == adapterID {
@@ -35,9 +39,12 @@ func GetIscsiAdater(hssProps *mo.HostStorageSystem, host, adapterID string) (typ
 	return nil, fmt.Errorf("could not find iscsi adapter device '%s' for host '%s'", adapterID, host)
 }
 
+// RescanStorageDevices performs a vmware rescan on all hba devices with a timeout
 func RescanStorageDevices(hss *object.HostStorageSystem) error {
 	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
 	defer cancel()
+
+	log.Printf("[INFO] rescaning all hba devices")
 
 	if err := hss.RescanAllHba(ctx); err != nil {
 		return fmt.Errorf("error trying to rescan storage devices: %s", err)
@@ -46,6 +53,8 @@ func RescanStorageDevices(hss *object.HostStorageSystem) error {
 	return nil
 }
 
+// AddInternetScsiStaticTargets adds given static targets to given host and adapter id
+// with timeout
 func AddInternetScsiStaticTargets(
 	client *govmomi.Client,
 	host,
@@ -74,6 +83,8 @@ func AddInternetScsiStaticTargets(
 	return nil
 }
 
+// RemoveInternetScsiStaticTargets removes given static targets from given host and adapter id
+// with timeout
 func RemoveInternetScsiStaticTargets(
 	client *govmomi.Client,
 	host,
@@ -102,6 +113,8 @@ func RemoveInternetScsiStaticTargets(
 	return nil
 }
 
+// AddInternetScsiSendTargets adds given send targets to given host and adapter id
+// with timeout
 func AddInternetScsiSendTargets(
 	client *govmomi.Client,
 	host,
@@ -130,6 +143,8 @@ func AddInternetScsiSendTargets(
 	return nil
 }
 
+// RemoveInternetScsiSendTargets removes given send targets from given host and adapter id
+// with timeout
 func RemoveInternetScsiSendTargets(
 	client *govmomi.Client,
 	host,
@@ -158,6 +173,7 @@ func RemoveInternetScsiSendTargets(
 	return nil
 }
 
+// ExtractChapCredsFromTarget is helper function takes given target map and returns the chap username and password creds
 func ExtractChapCredsFromTarget(target map[string]interface{}, outgoingCreds bool) map[string]interface{} {
 	chapList := target["chap"].([]interface{})
 	chapCreds := map[string]interface{}{
@@ -180,53 +196,11 @@ func ExtractChapCredsFromTarget(target map[string]interface{}, outgoingCreds boo
 	return chapCreds
 }
 
-func ExtractTargetUpdates(oldList, newList []interface{}) ([]interface{}, []interface{}) {
-	dupTargets := make([]interface{}, 0, len(newList))
-	removeTargets := make([]interface{}, 0, len(oldList))
-
-	// Looping and comparing if any of the old targets still exist and remove any targets
-	// that have changed
-	for _, v := range oldList {
-		oldTarget := v.(map[string]interface{})
-		found := false
-
-		for _, newTarget := range newList {
-			if reflect.DeepEqual(oldTarget, newTarget) {
-				found = true
-			}
-		}
-
-		if found {
-			dupTargets = append(dupTargets, oldTarget)
-		} else {
-			removeTargets = append(removeTargets, oldTarget)
-		}
-	}
-
-	newTargets := make([]interface{}, 0, len(newList))
-
-	for _, v := range newList {
-		newTarget := v.(map[string]interface{})
-		found := false
-
-		for _, dupTarget := range dupTargets {
-			if reflect.DeepEqual(newTarget, dupTarget) {
-				found = true
-			}
-		}
-
-		if !found {
-			newTargets = append(newTargets, newTarget)
-		}
-	}
-
-	return removeTargets, newTargets
-}
-
 /////////////////////////
 // Schemas Helpers
 /////////////////////////
 
+// ChapSchema returns schema for chap incoming and outgoing creds for iscsi targets
 func ChapSchema() *schema.Schema {
 	return &schema.Schema{
 		Type:        schema.TypeList,
@@ -251,7 +225,7 @@ func ChapSchema() *schema.Schema {
 								Type:        schema.TypeString,
 								Required:    true,
 								Description: "Password to auth against iscsi device",
-								//Sensitive:   true,
+								Sensitive:   true,
 							},
 						},
 					},
@@ -272,7 +246,7 @@ func ChapSchema() *schema.Schema {
 								Type:        schema.TypeString,
 								Required:    true,
 								Description: "Password to auth against host",
-								//Sensitive:   true,
+								Sensitive:   true,
 							},
 						},
 					},
@@ -282,6 +256,7 @@ func ChapSchema() *schema.Schema {
 	}
 }
 
+// IPSchema returns schema for ip for iscsi targets
 func IPSchema() *schema.Schema {
 	return &schema.Schema{
 		Type:         schema.TypeString,
@@ -291,6 +266,7 @@ func IPSchema() *schema.Schema {
 	}
 }
 
+// PortSchema returns schema for port for iscsi targets
 func PortSchema() *schema.Schema {
 	return &schema.Schema{
 		Type:         schema.TypeInt,

@@ -20,11 +20,11 @@ import (
 func TestAccResourceVSphereIscsiTarget_basic(t *testing.T) {
 	resourceName := "vsphere_iscsi_target.target"
 
-	staticTargetIP := "172.16.0.1"
-	sendTargetIP := "172.16.1.1"
+	staticTargetIP := "172.20.0.1"
+	sendTargetIP := "172.20.1.1"
 
-	newStaticTargetIP := "172.17.0.1"
-	newSendTargetIP := "172.17.1.1"
+	newStaticTargetIP := "172.21.0.1"
+	newSendTargetIP := "172.21.1.1"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {

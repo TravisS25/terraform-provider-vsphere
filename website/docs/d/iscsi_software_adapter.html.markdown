@@ -29,6 +29,6 @@ The following arguments are supported:
 
 ## Attribute Reference
 
-* `id` - The same as the `host_system_id` parameter
+* `id` - Represents the host and software adapter id in the form of: `<host_system_id>:<adapter_id>`
 * `host_system_id` - The host id the iscsi software adapter is attached to
 * `iscsi_name` - The iscsi software adapter name from either being user defined or vmware generated

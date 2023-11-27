@@ -6,6 +6,7 @@ package iscsi
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
@@ -31,7 +32,11 @@ func GetIscsiSoftwareAdater(hssProps *mo.HostStorageSystem, host string) (*types
 
 // UpdateIscsiName is util helper that updates iscsi name for adapter
 func UpdateIscsiName(host, device, name string, c *govmomi.Client, hssProps types.ManagedObjectReference) error {
-	_, err := methods.UpdateInternetScsiName(context.Background(), c, &types.UpdateInternetScsiName{
+	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
+	defer cancel()
+
+	log.Printf("[INFO] updating iscsi software adapter")
+	_, err := methods.UpdateInternetScsiName(ctx, c, &types.UpdateInternetScsiName{
 		This:           hssProps.Reference(),
 		IScsiHbaDevice: device,
 		IScsiName:      name,
@@ -49,6 +54,7 @@ func UpdateSoftwareInternetScsi(client *govmomi.Client, ref types.ManagedObjectR
 	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
 	defer cancel()
 
+	log.Printf("[INFO] enabling iscsi software adapter")
 	_, err := methods.UpdateSoftwareInternetScsiEnabled(
 		ctx,
 		client.Client,

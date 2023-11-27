@@ -5,7 +5,6 @@ package vsphere
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"testing"
 
@@ -18,7 +17,10 @@ func TestAccDataSourceVSphereIscsiSoftwareAdapter_basic(t *testing.T) {
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
-			testAccDataSourceVSphereIscsiSoftwareAdapterEnvCheck(t)
+			testAccCheckEnvVariablesF(
+				t,
+				[]string{"TF_VAR_VSPHERE_DATACENTER", "TF_VAR_VSPHERE_CLUSTER", "TF_VAR_VSPHERE_ESXI1"},
+			)
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
@@ -56,13 +58,4 @@ func testAccDataSourceVSphereIscsiSoftwareAdapterConfig() string {
 			testhelper.ConfigDataRootHost1(),
 		),
 	)
-}
-func testAccDataSourceVSphereIscsiSoftwareAdapterEnvCheck(t *testing.T) {
-	envVars := []string{"TF_VAR_VSPHERE_DATACENTER", "TF_VAR_VSPHERE_CLUSTER", "TF_VAR_VSPHERE_ESXI1"}
-
-	for _, v := range envVars {
-		if os.Getenv(v) == "" {
-			t.Fatalf("Must set env variable '%s'", v)
-		}
-	}
 }

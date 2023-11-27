@@ -40,19 +40,19 @@ The following arguments are supported:
 
 ## Attribute Reference
 
-* `id` - The same as the `host_system_id` parameter
+* `id` - Represents the host and software adapter id in the form of: `<host_system_id>:<adapter_id>`
 * `host_system_id` - The host id the iscsi software adapter is attached to
 * `iscsi_name` - The iscsi software adapter name from either being user defined or vmware generated
 
 ## Importing
 
 An existing iscsi software adapter can be imported into this resource
-via `host_system_id`.  An example is below:
+via `<host_system_id>:<adapter_id>`.  An example is below:
 
 ```
-terraform import vsphere_iscsi_software_adapter.host host-1
+terraform import vsphere_iscsi_software_adapter.host host-1:vmhba65
 ```
 
-The above would import the iscsi software adapter from host `host-1`
+The above would import the iscsi software adapter from host `host-1` and software adapter id of `vmhba65`
 
 ~> **NOTE:** The iscsi software adapter for given host must already be enabled for import to work or an error will occur

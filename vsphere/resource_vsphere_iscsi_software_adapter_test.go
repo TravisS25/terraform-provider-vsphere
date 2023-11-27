@@ -6,6 +6,7 @@ package vsphere
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -23,7 +24,7 @@ func TestAccResourceVSphereIscsiSoftwareAdapter_basic(t *testing.T) {
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
-			testAccCheckEnvVariables(
+			testAccCheckEnvVariablesF(
 				t,
 				[]string{"TF_VAR_VSPHERE_DATACENTER", "TF_VAR_VSPHERE_CLUSTER", "TF_VAR_VSPHERE_ESXI1"},
 			)
@@ -34,21 +35,19 @@ func TestAccResourceVSphereIscsiSoftwareAdapter_basic(t *testing.T) {
 			{
 				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(testIscsiName),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVSphereIscsiSoftwareAdapterExists("vsphere_iscsi_software_adapter.h1"),
-					testAccVSphereIscsiSoftwareAdapterWithIscsiName("vsphere_iscsi_software_adapter.h1", testIscsiName),
+					testAccVSphereIscsiSoftwareAdapterValidation("vsphere_iscsi_software_adapter.h1", testIscsiName),
 				),
 			},
 			{
 				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
 				Check: resource.ComposeTestCheckFunc(
-					testAccVSphereIscsiSoftwareAdapterWithIscsiName("vsphere_iscsi_software_adapter.h1", newTestIscsiName),
+					testAccVSphereIscsiSoftwareAdapterValidation("vsphere_iscsi_software_adapter.h1", newTestIscsiName),
 				),
 			},
 			{
-				ResourceName:      "vsphere_iscsi_software_adapter.h1",
-				Config:            testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName: "vsphere_iscsi_software_adapter.h1",
+				Config:       testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
+				ImportState:  true,
 			},
 		},
 	})
@@ -60,7 +59,8 @@ func testAccVSphereIscsiSoftwareAdapterDestroy(s *terraform.State) error {
 		if rs.Type != "vsphere_host" {
 			continue
 		}
-		hostID := rs.Primary.ID
+		idSplit := strings.Split(rs.Primary.ID, ":")
+		hostID := idSplit[0]
 		client := testAccProvider.Meta().(*Client).vimClient
 		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
 		if err != nil {
@@ -77,36 +77,15 @@ func testAccVSphereIscsiSoftwareAdapterDestroy(s *terraform.State) error {
 	return nil
 }
 
-func testAccVSphereIscsiSoftwareAdapterExists(name string) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[name]
-
-		if !ok {
-			return fmt.Errorf("%s key not found on the server", name)
-		}
-		hostID := rs.Primary.ID
-		client := testAccProvider.Meta().(*Client).vimClient
-		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
-		if err != nil {
-			return err
-		}
-
-		if _, err = iscsi.GetIscsiSoftwareAdater(hssProps, hostID); err != nil {
-			return err
-		}
-
-		return nil
-	}
-}
-
-func testAccVSphereIscsiSoftwareAdapterWithIscsiName(resourceName, iscsiName string) resource.TestCheckFunc {
+func testAccVSphereIscsiSoftwareAdapterValidation(resourceName, iscsiName string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[resourceName]
 
 		if !ok {
 			return fmt.Errorf("%s key not found on the server", resourceName)
 		}
-		hostID := rs.Primary.ID
+		idSplit := strings.Split(rs.Primary.ID, ":")
+		hostID := idSplit[0]
 		client := testAccProvider.Meta().(*Client).vimClient
 		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
 		if err != nil {
@@ -122,7 +101,7 @@ func testAccVSphereIscsiSoftwareAdapterWithIscsiName(resourceName, iscsiName str
 			return fmt.Errorf(
 				"iscsi adapter name invalid.  current value: %s; expected value: %s",
 				adapter.IScsiName,
-				iscsiName,
+				hostID,
 			)
 		}
 
