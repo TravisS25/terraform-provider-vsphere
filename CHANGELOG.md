@@ -1,4 +1,10 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 2.8.0 (November 27, 2023)
+
+FEATURES:
+* `resource/iscsi_software_adapter` : Enables iscsi software adpater for given host
+* `resource/iscsi_target` : Allows ability to add static and send targets for given adapter on given host
+
 ## 2.7.0 (November 16, 2023)
 
 FEATURES:

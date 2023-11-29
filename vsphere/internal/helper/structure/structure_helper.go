@@ -557,3 +557,49 @@ func ValuesAvailable(base string, keys []string, d *schema.ResourceDiff) bool {
 	}
 	return true
 }
+
+// ExtractResourceDiff is helper function thats determines if there is a difference between the given old and new list
+// and returns a list of resources that should be removed and a list that should be added respectively
+//
+// This function is meant to be used with resources that have inner resource where we want to do an in-place update instead
+// of a delete and create when inner resources change
+func ExtractResourceDiff(oldList, newList []interface{}) ([]interface{}, []interface{}) {
+	dupEntries := make([]interface{}, 0, len(newList))
+	removeEntries := make([]interface{}, 0, len(oldList))
+
+	for _, v := range oldList {
+		oldEntry := v.(map[string]interface{})
+		found := false
+
+		for _, newEntry := range newList {
+			if reflect.DeepEqual(oldEntry, newEntry) {
+				found = true
+			}
+		}
+
+		if found {
+			dupEntries = append(dupEntries, oldEntry)
+		} else {
+			removeEntries = append(removeEntries, oldEntry)
+		}
+	}
+
+	newEntries := make([]interface{}, 0, len(newList))
+
+	for _, v := range newList {
+		newEntry := v.(map[string]interface{})
+		found := false
+
+		for _, dupEntry := range dupEntries {
+			if reflect.DeepEqual(newEntry, dupEntry) {
+				found = true
+			}
+		}
+
+		if !found {
+			newEntries = append(newEntries, newEntry)
+		}
+	}
+
+	return removeEntries, newEntries
+}

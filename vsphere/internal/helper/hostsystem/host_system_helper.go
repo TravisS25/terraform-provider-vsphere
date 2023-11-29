@@ -72,6 +72,52 @@ func Properties(host *object.HostSystem) (*mo.HostSystem, error) {
 	return &props, nil
 }
 
+// HostStorageSystemProperties is a convenience method that wraps fetching the HostStorageSystem MO
+// from its higher-level object.
+func HostStorageSystemProperties(hss *object.HostStorageSystem) (*mo.HostStorageSystem, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
+	defer cancel()
+	var props mo.HostStorageSystem
+	if err := hss.Properties(ctx, hss.Reference(), nil, &props); err != nil {
+		return nil, err
+	}
+	return &props, nil
+}
+
+// GetHostStorageSystemPropertiesFromHost is util helper that grabs the storage system properties for given host
+func GetHostStorageSystemPropertiesFromHost(client *govmomi.Client, hostID string) (*mo.HostStorageSystem, error) {
+	hss, err := GetHostStorageSystemFromHost(client, hostID)
+	if err != nil {
+		return nil, err
+	}
+
+	hssProps, err := HostStorageSystemProperties(hss)
+	if err != nil {
+		return nil, fmt.Errorf("error trying to retrieve host storage system properties for host '%s': %s", hostID, err)
+	}
+
+	return hssProps, nil
+}
+
+// GetHostStorageSystemFromHost is util helper that grabs the storage system properties for given host
+func GetHostStorageSystemFromHost(client *govmomi.Client, hostID string) (*object.HostStorageSystem, error) {
+	hs, err := FromID(client, hostID)
+	if err != nil {
+		if viapi.IsManagedObjectNotFoundError(err) {
+			return nil, fmt.Errorf("could not find host with id '%s'", hostID)
+		}
+
+		return nil, fmt.Errorf("error while searching host '%s': %s", hostID, err)
+	}
+
+	hsProps, err := Properties(hs)
+	if err != nil {
+		return nil, fmt.Errorf("error trying to retrieve host system properties for host '%s': %s", hostID, err)
+	}
+
+	return object.NewHostStorageSystem(client.Client, *hsProps.ConfigManager.StorageSystem), nil
+}
+
 // ResourcePool is a convenience method that wraps fetching the host system's
 // root resource pool
 func ResourcePool(host *object.HostSystem) (*object.ResourcePool, error) {
