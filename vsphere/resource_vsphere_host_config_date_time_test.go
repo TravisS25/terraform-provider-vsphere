@@ -1,47 +1,49 @@
 package vsphere
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostservicestate"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/testhelper"
-	"github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware/govmomi/vim25/mo"
 )
 
 func TestAccResourceVSphereHostConfigDateTime_basic(t *testing.T) {
-	policy := types.HostServicePolicyOn
-	newPolicy := types.HostServicePolicyOff
+	server := "0.us.pool.ntp.org"
+	newServer := "1.us.pool.ntp.org"
 	resourceName := "vsphere_host_config_date_time.h1"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
-			//testAccCheckEnvVariables(t)
+			testAccCheckEnvVariablesF(
+				t,
+				[]string{"TF_VAR_VSPHERE_DATACENTER", "TF_VAR_VSPHERE_CLUSTER", "TF_VAR_VSPHERE_ESXI1"},
+			)
 		},
 		Providers:    testAccProviders,
 		CheckDestroy: testAccResourceVSphereHostConfigDateTimeDestroy(resourceName),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccResourceVSphereTwoHostConfigDateTimeConfig(policy),
+				Config: testAccResourceVSphereHostConfigDateTimeConfig(server),
 				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereHostConfigDateTimeValidateServicesRunning(resourceName, true),
+					testAccVSphereHostConfigDateTimeValidation(resourceName, server),
 				),
 			},
 			{
-				Config: testAccResourceVSphereOneHostConfigDateTimeConfig(newPolicy),
+				Config: testAccResourceVSphereHostConfigDateTimeConfig(newServer),
 				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereHostConfigDateTimeValidateServicesRunning(resourceName, false),
+					testAccVSphereHostConfigDateTimeValidation(resourceName, newServer),
 				),
 			},
 			{
 				ResourceName: resourceName,
-				Config:       testAccResourceVSphereOneHostConfigDateTimeConfig(newPolicy),
+				Config:       testAccResourceVSphereHostConfigDateTimeConfig(resourceName),
 				ImportState:  true,
 			},
 		},
@@ -55,129 +57,89 @@ func testAccResourceVSphereHostConfigDateTimeDestroy(name string) resource.TestC
 		if !ok {
 			return fmt.Errorf("%s key not found on the server", name)
 		}
+
 		client := testAccProvider.Meta().(*Client).vimClient
-
-		hsList, err := hostservicestate.GetHostServies(client, rs.Primary.ID, provider.DefaultAPITimeout)
+		hostID := rs.Primary.ID
+		host, err := hostsystem.FromID(client, hostID)
 		if err != nil {
-			return fmt.Errorf("error trying to get host services from host '%s'", err)
+			return err
 		}
 
-		srvKey1Running := false
-		srvKey2Running := false
-
-		for _, hs := range hsList {
-			if hs.Key == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1") && hs.Running {
-				srvKey1Running = true
-			}
-			if hs.Key == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2") && hs.Running {
-				srvKey2Running = true
-			}
+		hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
+		if err != nil {
+			return fmt.Errorf("error trying to get datetime system object from host '%s': %s", hostID, err)
 		}
 
-		if srvKey1Running {
-			return fmt.Errorf("service '%s' is still running", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1"))
+		var hostDtProps mo.HostDateTimeSystem
+		if err = hostDt.Properties(context.Background(), hostDt.Reference(), nil, &hostDtProps); err != nil {
+			return fmt.Errorf("error trying to gather datetime properties from host '%s': %s", hostID, err)
 		}
 
-		if srvKey2Running {
-			return fmt.Errorf("service '%s' is still running", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2"))
+		if len(hostDtProps.DateTimeInfo.NtpConfig.Server) > 0 {
+			return fmt.Errorf("ntp server not destroyed")
 		}
 
 		return nil
 	}
 }
 
-func testAccResourceVSphereOneHostConfigDateTimeConfig(policy types.HostServicePolicy) string {
+func testAccVSphereHostConfigDateTimeValidation(resourceName, server string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+
+		if !ok {
+			return fmt.Errorf("%s key not found on the server", resourceName)
+		}
+		hostID := rs.Primary.ID
+		client := testAccProvider.Meta().(*Client).vimClient
+		host, err := hostsystem.FromID(client, hostID)
+		if err != nil {
+			return err
+		}
+
+		hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
+		if err != nil {
+			return fmt.Errorf("error trying to get datetime system object from host '%s': %s", hostID, err)
+		}
+
+		var hostDtProps mo.HostDateTimeSystem
+		if err = hostDt.Properties(context.Background(), hostDt.Reference(), nil, &hostDtProps); err != nil {
+			return fmt.Errorf("error trying to gather datetime properties from host '%s': %s", hostID, err)
+		}
+
+		if len(hostDtProps.DateTimeInfo.NtpConfig.Server) > 0 {
+			if server != hostDtProps.DateTimeInfo.NtpConfig.Server[0] {
+				return fmt.Errorf(
+					"invalid server:  expected: '%s'; got: '%s'",
+					server,
+					hostDtProps.DateTimeInfo.NtpConfig.Server[0],
+				)
+			}
+		} else {
+			return fmt.Errorf("there are no ntp servers set")
+		}
+
+		return nil
+	}
+}
+
+func testAccResourceVSphereHostConfigDateTimeConfig(server string) string {
 	return fmt.Sprintf(
 		`
-		%s
+	%s
 
-		resource "vsphere_host_service_state" "h1" {
-			host_system_id = data.vsphere_host.roothost1.id
-			service {
-				key = "%s"
-				policy = "%s"
-			}
+	resource "vsphere_host_config_date_time" "h1" {
+		host_system_id = data.vsphere_host.roothost1.id
+		ntp_config {
+			server = ["%s"]
 		}
-		`,
+	}
+	`,
 		testhelper.CombineConfigs(
 			testhelper.ConfigDataRootDC1(),
 			testhelper.ConfigDataRootComputeCluster1(),
 			testhelper.ConfigDataRootHost1(),
 		),
-		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1"),
-		policy,
+		server,
 	)
-}
-
-func testAccResourceVSphereTwoHostConfigDateTimeConfig(policy types.HostServicePolicy) string {
-	return fmt.Sprintf(
-		`
-	%s
-
-	%s
-
-	%s
-
-	resource "vsphere_host_service_state" "h1" {
-		host_system_id = data.vsphere_host.roothost1.id
-		service {
-			key = "%s"
-			policy = "%s"
-		}
-		service {
-			key = "%s"
-			policy = "%s"
-		}
-	}
-	`,
-		testhelper.ConfigDataRootDC1(),
-		testhelper.ConfigDataRootComputeCluster1(),
-		testhelper.ConfigDataRootHost1(),
-		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1"),
-		policy,
-		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2"),
-		policy,
-	)
-}
-
-func testAccResourceVSphereHostConfigDateTimeValidateServicesRunning(name string, twoServicesRunning bool) resource.TestCheckFunc {
-	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[name]
-
-		if !ok {
-			return fmt.Errorf("%s key not found on the server", name)
-		}
-		client := testAccProvider.Meta().(*Client).vimClient
-
-		hsList, err := hostservicestate.GetHostServies(client, rs.Primary.ID, provider.DefaultAPITimeout)
-		if err != nil {
-			return fmt.Errorf("error trying to get host services from host '%s'", err)
-		}
-
-		srvKey1Running := false
-		srvKey2Running := false
-
-		for _, hs := range hsList {
-			if hs.Key == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1") && hs.Running {
-				srvKey1Running = true
-			}
-			if hs.Key == os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2") && hs.Running {
-				srvKey2Running = true
-			}
-		}
-
-		if !srvKey1Running {
-			return fmt.Errorf("service '%s' is not running", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1"))
-		}
-
-		if !srvKey2Running && twoServicesRunning {
-			return fmt.Errorf("service '%s' is not running", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2"))
-		}
-
-		if srvKey2Running && !twoServicesRunning {
-			return fmt.Errorf("service '%s' is running when it should be turned off", os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2"))
-		}
-
-		return nil
-	}
 }
