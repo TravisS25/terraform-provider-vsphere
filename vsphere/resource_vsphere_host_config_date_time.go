@@ -45,13 +45,6 @@ func resourceVSphereHostConfigDateTime() *schema.Resource {
 							Type:        schema.TypeSet,
 							Required:    true,
 							Description: "List of ntp servers to use",
-							//ValidateFunc: validation.IsIPAddress,
-							Elem: &schema.Schema{Type: schema.TypeString},
-						},
-						"config_file": {
-							Type:        schema.TypeSet,
-							Optional:    true,
-							Description: "Content of ntp.conf host configuration file, split by lines for ntpd version 4.2.8",
 							Elem:        &schema.Schema{Type: schema.TypeString},
 						},
 					},
@@ -75,26 +68,12 @@ func resourceVSphereHostConfigDateTime() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 				Description: "Disables detected failures being sent to VCenter if set",
-				ValidateFunc: validation.StringInSlice(
-					[]string{
-						string(types.HostDateTimeInfoProtocolNtp),
-						string(types.HostDateTimeInfoProtocolPtp),
-					},
-					true,
-				),
 			},
 			"disable_fallback": {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				Default:     false,
 				Description: "Disables falling back to ntp if ptp fails when set",
-				ValidateFunc: validation.StringInSlice(
-					[]string{
-						string(types.HostDateTimeInfoProtocolNtp),
-						string(types.HostDateTimeInfoProtocolPtp),
-					},
-					true,
-				),
 			},
 		},
 	}
@@ -140,16 +119,8 @@ func resourceVSphereHostConfigDateTimeCreate(d *schema.ResourceData, meta interf
 			servers = append(servers, v.(string))
 		}
 
-		cfgFileList := ntpCfg["config_file"].(*schema.Set).List()
-		cfgFiles := make([]string, 0, len(cfgFileList))
-
-		for _, v := range cfgFileList {
-			cfgFiles = append(cfgFiles, v.(string))
-		}
-
 		cfg.NtpConfig = &types.HostNtpConfig{
-			Server:     servers,
-			ConfigFile: cfgFiles,
+			Server: servers,
 		}
 	}
 
@@ -190,7 +161,6 @@ func resourceVSphereHostConfigDateTimeUpdate(d *schema.ResourceData, meta interf
 		DisableFallback: &disableFallback,
 	}
 
-	// TODO: Come back to this later
 	if d.HasChange("ntp_config") {
 		_, newValue := d.GetChange("ntp_config")
 		newList := newValue.([]interface{})
@@ -204,16 +174,8 @@ func resourceVSphereHostConfigDateTimeUpdate(d *schema.ResourceData, meta interf
 				servers = append(servers, v.(string))
 			}
 
-			cfgFileList := ntpCfg["config_file"].(*schema.Set).List()
-			cfgFiles := make([]string, 0, len(cfgFileList))
-
-			for _, v := range cfgFileList {
-				cfgFiles = append(cfgFiles, v.(string))
-			}
-
 			cfg.NtpConfig = &types.HostNtpConfig{
-				Server:     servers,
-				ConfigFile: cfgFiles,
+				Server: servers,
 			}
 		}
 	}
@@ -263,6 +225,7 @@ func resourceVSphereHostConfigDateTimeImport(ctx context.Context, d *schema.Reso
 	}
 
 	d.SetId(hostID)
+	d.Set("host_system_id", hostID)
 	return []*schema.ResourceData{d}, nil
 }
 
@@ -293,10 +256,17 @@ func hostConfigDateTimeRead(d *schema.ResourceData, meta interface{}, hostID str
 		return fmt.Errorf("error trying to gather datetime properties from host '%s': %s", hostID, err)
 	}
 
+	for _, v := range hostDtProps.DateTimeInfo.NtpConfig.ConfigFile {
+		log.Printf("[DEBUG] config line: %s\n", v)
+	}
+
+	for _, v := range hostDtProps.DateTimeInfo.NtpConfig.Server {
+		log.Printf("[DEBUG] server line: %s\n", v)
+	}
+
 	ntpCfg := []interface{}{
 		map[string]interface{}{
-			"server":      hostDtProps.DateTimeInfo.NtpConfig.Server,
-			"config_file": hostDtProps.DateTimeInfo.NtpConfig.ConfigFile,
+			"server": hostDtProps.DateTimeInfo.NtpConfig.Server,
 		},
 	}
 
@@ -304,6 +274,5 @@ func hostConfigDateTimeRead(d *schema.ResourceData, meta interface{}, hostID str
 	d.Set("protocol", hostDtProps.DateTimeInfo.SystemClockProtocol)
 	d.Set("disable_events", hostDtProps.DateTimeInfo.DisableEvents)
 	d.Set("disable_fallback", hostDtProps.DateTimeInfo.DisableFallback)
-
 	return nil
 }
