@@ -49,9 +49,7 @@ func testAccDataSourceVSphereHostConfigDateTimeConfig() string {
 
 		resource "vsphere_host_config_date_time" "h1" {
 			host_system_id = data.vsphere_host.roothost1.id
-			ntp_config{
-				server = ["0.us.pool.ntp.org"]
-			}
+			ntp_servers = ["0.us.pool.ntp.org"]
 		}
 
 		data "vsphere_host_config_date_time" "h1" {

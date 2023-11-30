@@ -34,21 +34,11 @@ func resourceVSphereHostConfigDateTime() *schema.Resource {
 				ForceNew:    true,
 				Description: "Host id of machine to configure ntp",
 			},
-			"ntp_config": {
-				Type:        schema.TypeList,
+			"ntp_servers": {
+				Type:        schema.TypeSet,
 				Optional:    true,
-				Description: "Config settings for ntp",
-				MaxItems:    1,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"server": {
-							Type:        schema.TypeSet,
-							Required:    true,
-							Description: "List of ntp servers to use",
-							Elem:        &schema.Schema{Type: schema.TypeString},
-						},
-					},
-				},
+				Description: "List of ntp servers to use",
+				Elem:        &schema.Schema{Type: schema.TypeString},
 			},
 			"protocol": {
 				Type:        schema.TypeString,
@@ -81,7 +71,7 @@ func resourceVSphereHostConfigDateTime() *schema.Resource {
 
 func resourceVSphereHostConfigDateTimeRead(d *schema.ResourceData, meta interface{}) error {
 	hostID := d.Get("host_system_id").(string)
-	log.Printf("[INFO] reading datetime configuration for host '%s'", hostID)
+	log.Printf("[INFO] reading date time configuration for host '%s'", hostID)
 	return hostConfigDateTimeRead(d, meta, hostID)
 }
 
@@ -95,7 +85,7 @@ func resourceVSphereHostConfigDateTimeCreate(d *schema.ResourceData, meta interf
 
 	hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
 	if err != nil {
-		return fmt.Errorf("error trying to get datetime system object from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to get date time system object from host '%s': %s", hostID, err)
 	}
 
 	disableEvents := d.Get("disable_events").(bool)
@@ -108,14 +98,12 @@ func resourceVSphereHostConfigDateTimeCreate(d *schema.ResourceData, meta interf
 		DisableFallback: &disableFallback,
 	}
 
-	ntpCfgList := d.Get("ntp_config").([]interface{})
+	ntpServerList := d.Get("ntp_servers").(*schema.Set).List()
 
-	if len(ntpCfgList) > 0 {
-		ntpCfg := ntpCfgList[0].(map[string]interface{})
-		serverList := ntpCfg["server"].(*schema.Set).List()
-		servers := make([]string, 0, len(serverList))
+	if len(ntpServerList) > 0 {
+		servers := make([]string, 0, len(ntpServerList))
 
-		for _, v := range serverList {
+		for _, v := range ntpServerList {
 			servers = append(servers, v.(string))
 		}
 
@@ -124,10 +112,10 @@ func resourceVSphereHostConfigDateTimeCreate(d *schema.ResourceData, meta interf
 		}
 	}
 
-	log.Printf("[INFO] creating datetime configuration for host '%s'", hostID)
+	log.Printf("[INFO] creating date time configuration for host '%s'", hostID)
 
 	if err = hostDt.UpdateConfig(context.Background(), cfg); err != nil {
-		return fmt.Errorf("error trying to create datetime configuration for host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to create date time configuration for host '%s': %s", hostID, err)
 	}
 
 	d.SetId(hostID)
@@ -145,12 +133,12 @@ func resourceVSphereHostConfigDateTimeUpdate(d *schema.ResourceData, meta interf
 
 	hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
 	if err != nil {
-		return fmt.Errorf("error trying to get datetime system object from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to get date time system object from host '%s': %s", hostID, err)
 	}
 
 	var hostDtProps mo.HostDateTimeSystem
 	if err = hostDt.Properties(context.Background(), hostDt.Reference(), nil, &hostDtProps); err != nil {
-		return fmt.Errorf("error trying to gather datetime properties from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to gather date time properties from host '%s': %s", hostID, err)
 	}
 
 	disableEvents := d.Get("disable_events").(bool)
@@ -161,16 +149,14 @@ func resourceVSphereHostConfigDateTimeUpdate(d *schema.ResourceData, meta interf
 		DisableFallback: &disableFallback,
 	}
 
-	if d.HasChange("ntp_config") {
-		_, newValue := d.GetChange("ntp_config")
-		newList := newValue.([]interface{})
+	if d.HasChange("ntp_servers") {
+		_, newValue := d.GetChange("ntp_servers")
+		newList := newValue.(*schema.Set).List()
 
 		if len(newList) > 0 {
-			ntpCfg := newList[0].(map[string]interface{})
-			serverList := ntpCfg["server"].(*schema.Set).List()
-			servers := make([]string, 0, len(serverList))
+			servers := make([]string, 0, len(newList))
 
-			for _, v := range serverList {
+			for _, v := range newList {
 				servers = append(servers, v.(string))
 			}
 
@@ -180,10 +166,10 @@ func resourceVSphereHostConfigDateTimeUpdate(d *schema.ResourceData, meta interf
 		}
 	}
 
-	log.Printf("[INFO] updating datetime configuration for host '%s'", hostID)
+	log.Printf("[INFO] updating date time configuration for host '%s'", hostID)
 
 	if err = hostDt.UpdateConfig(context.Background(), cfg); err != nil {
-		return fmt.Errorf("error trying to update datetime configuration for host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to update date time configuration for host '%s': %s", hostID, err)
 	}
 
 	return nil
@@ -199,10 +185,10 @@ func resourceVSphereHostConfigDateTimeDelete(d *schema.ResourceData, meta interf
 
 	hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
 	if err != nil {
-		return fmt.Errorf("error trying to get datetime system object from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to get date time system object from host '%s': %s", hostID, err)
 	}
 
-	log.Printf("[INFO] deleting datetime configuration for host '%s'", hostID)
+	log.Printf("[INFO] deleting date time configuration for host '%s'", hostID)
 
 	factoryDefaults := true
 
@@ -210,7 +196,7 @@ func resourceVSphereHostConfigDateTimeDelete(d *schema.ResourceData, meta interf
 		Protocol:               string(types.HostDateTimeInfoProtocolNtp),
 		ResetToFactoryDefaults: &factoryDefaults,
 	}); err != nil {
-		return fmt.Errorf("error trying to delete datetime configuration for host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to delete date time configuration for host '%s': %s", hostID, err)
 	}
 
 	return nil
@@ -218,7 +204,7 @@ func resourceVSphereHostConfigDateTimeDelete(d *schema.ResourceData, meta interf
 
 func resourceVSphereHostConfigDateTimeImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	hostID := d.Id()
-	log.Printf("[INFO] importing datetime configuration for host '%s'", hostID)
+	log.Printf("[INFO] importing date time configuration for host '%s'", hostID)
 	err := hostConfigDateTimeRead(d, meta, hostID)
 	if err != nil {
 		return nil, err
@@ -230,9 +216,9 @@ func resourceVSphereHostConfigDateTimeImport(ctx context.Context, d *schema.Reso
 }
 
 func resourceVSphereHostConfigDateTimeCustomDiff(ctx context.Context, rd *schema.ResourceDiff, meta interface{}) error {
-	ntpCfg := rd.Get("ntp_config").([]interface{})
+	ntpServers := rd.Get("ntp_servers").(*schema.Set).List()
 
-	if len(ntpCfg) == 0 {
+	if len(ntpServers) == 0 {
 		return fmt.Errorf("'ntp_config' is required")
 	}
 
@@ -248,29 +234,15 @@ func hostConfigDateTimeRead(d *schema.ResourceData, meta interface{}, hostID str
 
 	hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
 	if err != nil {
-		return fmt.Errorf("error trying to get datetime system object from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to get date time system object from host '%s': %s", hostID, err)
 	}
 
 	var hostDtProps mo.HostDateTimeSystem
 	if err = hostDt.Properties(context.Background(), hostDt.Reference(), nil, &hostDtProps); err != nil {
-		return fmt.Errorf("error trying to gather datetime properties from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to gather date time properties from host '%s': %s", hostID, err)
 	}
 
-	for _, v := range hostDtProps.DateTimeInfo.NtpConfig.ConfigFile {
-		log.Printf("[DEBUG] config line: %s\n", v)
-	}
-
-	for _, v := range hostDtProps.DateTimeInfo.NtpConfig.Server {
-		log.Printf("[DEBUG] server line: %s\n", v)
-	}
-
-	ntpCfg := []interface{}{
-		map[string]interface{}{
-			"server": hostDtProps.DateTimeInfo.NtpConfig.Server,
-		},
-	}
-
-	d.Set("ntp_config", ntpCfg)
+	d.Set("ntp_servers", hostDtProps.DateTimeInfo.NtpConfig.Server)
 	d.Set("protocol", hostDtProps.DateTimeInfo.SystemClockProtocol)
 	d.Set("disable_events", hostDtProps.DateTimeInfo.DisableEvents)
 	d.Set("disable_fallback", hostDtProps.DateTimeInfo.DisableFallback)

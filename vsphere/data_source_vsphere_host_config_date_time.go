@@ -22,21 +22,11 @@ func dataSourceVSphereHostConfigDateTime() *schema.Resource {
 				Description: "Host id of machine to gather ntp info",
 				Required:    true,
 			},
-			"ntp_config": {
-				Type:        schema.TypeList,
+			"ntp_servers": {
+				Type:        schema.TypeSet,
 				Computed:    true,
-				Description: "Set ntp config settings",
-				//MaxItems:    1,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"server": {
-							Type:        schema.TypeSet,
-							Computed:    true,
-							Description: "List of ntp servers",
-							Elem:        &schema.Schema{Type: schema.TypeString},
-						},
-					},
-				},
+				Description: "Gathers list of ntp servers set for given host",
+				Elem:        &schema.Schema{Type: schema.TypeString},
 			},
 			"protocol": {
 				Type:        schema.TypeString,
@@ -46,12 +36,12 @@ func dataSourceVSphereHostConfigDateTime() *schema.Resource {
 			"events_disabled": {
 				Type:        schema.TypeBool,
 				Computed:    true,
-				Description: "Gathers whether events are disabled or not",
+				Description: "Gathers whether events are disabled",
 			},
 			"fallback_disabled": {
 				Type:        schema.TypeBool,
 				Computed:    true,
-				Description: "Gathers whether fallback to ntp is enabled",
+				Description: "Gathers whether fallback to ntp is disabled",
 			},
 		},
 	}
@@ -75,17 +65,11 @@ func dataSourceVSphereHostConfigDateTimeRead(d *schema.ResourceData, meta interf
 		return fmt.Errorf("error trying to gather datetime properties from host '%s': %s", hostID, err)
 	}
 
-	ntpCfg := []interface{}{
-		map[string]interface{}{
-			"server": hostDtProps.DateTimeInfo.NtpConfig.Server,
-		},
-	}
-
 	d.SetId(hostID)
 	d.Set("host_system_id", hostID)
 	d.Set("protocol", hostDtProps.DateTimeInfo.SystemClockProtocol)
 	d.Set("events_disabled", hostDtProps.DateTimeInfo.DisableEvents)
 	d.Set("fallback_disabled", hostDtProps.DateTimeInfo.DisableFallback)
-	d.Set("ntp_config", ntpCfg)
+	d.Set("ntp_servers", hostDtProps.DateTimeInfo.NtpConfig.Server)
 	return nil
 }

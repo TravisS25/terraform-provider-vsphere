@@ -130,9 +130,7 @@ func testAccResourceVSphereHostConfigDateTimeConfig(server string) string {
 
 	resource "vsphere_host_config_date_time" "h1" {
 		host_system_id = data.vsphere_host.roothost1.id
-		ntp_config {
-			server = ["%s"]
-		}
+		ntp_servers = ["%s"]
 	}
 	`,
 		testhelper.CombineConfigs(
