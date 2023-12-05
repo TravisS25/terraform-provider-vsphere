@@ -35,11 +35,11 @@ The following arguments are supported:
 
 ## Attribute Reference
 
-* `id` - Represents the `host_system_id` for the date time configuration
+* `id` - Same as `host_system_id`
 
 ## Importing
 
-Importing the current date time configuration for host via `host_system_id`.  An example is below:
+Importing the current date time configuration for host can be done via `host_system_id`.  An example is below:
 
 ```
 terraform import vsphere_host_config_date_time.host host-01

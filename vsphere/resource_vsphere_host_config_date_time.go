@@ -143,7 +143,9 @@ func resourceVSphereHostConfigDateTimeUpdate(d *schema.ResourceData, meta interf
 
 	disableEvents := d.Get("disable_events").(bool)
 	disableFallback := d.Get("disable_fallback").(bool)
+	enabled := true
 	cfg := types.HostDateTimeConfig{
+		Enabled:         &enabled,
 		Protocol:        d.Get("protocol").(string),
 		DisableEvents:   &disableEvents,
 		DisableFallback: &disableFallback,
@@ -191,7 +193,6 @@ func resourceVSphereHostConfigDateTimeDelete(d *schema.ResourceData, meta interf
 	log.Printf("[INFO] deleting date time configuration for host '%s'", hostID)
 
 	factoryDefaults := true
-
 	if err = hostDt.UpdateConfig(context.Background(), types.HostDateTimeConfig{
 		Protocol:               string(types.HostDateTimeInfoProtocolNtp),
 		ResetToFactoryDefaults: &factoryDefaults,
@@ -219,7 +220,7 @@ func resourceVSphereHostConfigDateTimeCustomDiff(ctx context.Context, rd *schema
 	ntpServers := rd.Get("ntp_servers").(*schema.Set).List()
 
 	if len(ntpServers) == 0 {
-		return fmt.Errorf("'ntp_config' is required")
+		return fmt.Errorf("'ntp_servers' parameter is required")
 	}
 
 	return nil

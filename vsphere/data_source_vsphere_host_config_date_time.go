@@ -6,6 +6,7 @@ package vsphere
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
@@ -50,6 +51,9 @@ func dataSourceVSphereHostConfigDateTime() *schema.Resource {
 func dataSourceVSphereHostConfigDateTimeRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
+
+	log.Printf("[INFO] reading date time configuration for data source on host '%s'", hostID)
+
 	host, err := hostsystem.FromID(client, hostID)
 	if err != nil {
 		return err
