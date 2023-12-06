@@ -1,4 +1,10 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 2.9.0 (December 5, 2023)
+
+FEATURES:
+* `resource/host_config_date_time` : Adds ability to set date time configuration for host
+* `datasource/host_config_date_time` : Adds ability to read date time configuration for host
+
 ## 2.8.0 (November 27, 2023)
 
 FEATURES:
