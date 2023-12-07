@@ -6,6 +6,7 @@ package vsphere
 import (
 	"fmt"
 	"context"
+	"strings"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -57,6 +58,11 @@ func resourceVSphereHostConfigDNSCreate(d *schema.ResourceData, meta interface{}
 	c := meta.(*Client).vimClient
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
+
+	// TODO: maybe we can move this to a ValidateFunc on the argument list above so "tf plan" catches it and you don't have to wait for a "TF apply" to see the error
+	if strings.Contains(d.Get("hostname").(string), ".") {
+		return fmt.Errorf("create func - Invalid hostname supplied. Should not be FQDN")
+	}
 
 	hns, err := hostNetworkSystemFromHostSystemID(c, d.Get("host_system_id").(string))
 	if err != nil{
