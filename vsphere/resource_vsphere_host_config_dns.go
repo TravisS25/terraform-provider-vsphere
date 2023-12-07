@@ -93,7 +93,7 @@ func resourceVSphereHostConfigDNSCreate(d *schema.ResourceData, meta interface{}
 	}
 
 	// add the resource into the terraform state
-	d.SetId(d.Get("hostname").(string))
+	d.SetId(d.Get("host_system_id").(string))
 
 	return resourceVSphereHostConfigDNSRead(d, meta)
 }
