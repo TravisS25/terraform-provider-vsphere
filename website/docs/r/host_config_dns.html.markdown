@@ -60,7 +60,7 @@ Existing DNS configurations can be imported into terraform but is not required. 
 
 The first step of the import is to define the resource in your TF file so you can reference the name you gave the resource in the .TF file in the `terraform import` command
 
-~> **NOTE:** If you are using `for_each` on the `vsphere_host_config_dns` resource you need to import using the "for_each" import example below. The basic import command below will import for only a single host.
+~> **NOTE:** If you are using `for_each` on the `vsphere_host_config_dns` resource you need to import using the `for_each` import example below. The basic import command below will import for only a single host.
 
 ### Basic import example
 
