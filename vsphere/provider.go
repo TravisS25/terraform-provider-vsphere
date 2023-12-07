@@ -152,6 +152,7 @@ func Provider() *schema.Provider {
 			"vsphere_host_service_state":                      resourceVsphereHostServiceState(),
 			"vsphere_iscsi_software_adapter":                  resourceVSphereIscsiSoftwareAdapter(),
 			"vsphere_iscsi_target":                            resourceVSphereIscsiTarget(),
+			"vsphere_host_config_dns":                         resourceVSphereHostConfigDNS(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
