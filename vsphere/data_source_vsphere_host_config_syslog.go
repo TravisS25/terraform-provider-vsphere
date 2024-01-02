@@ -26,6 +26,11 @@ func dataSourceVSphereHostConfigSyslog() *schema.Resource {
 				Computed:    true,
 				Description: "The remote host to output logs to",
 			},
+			"log_level": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "The log level to output logs",
+			},
 		},
 	}
 }

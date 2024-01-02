@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
 )
 
-func GetOptionManager(ctx context.Context, d *schema.ResourceData, client *govmomi.Client, hostID string) (*object.OptionManager, error) {
+func GetOptionManager(ctx context.Context, client *govmomi.Client, hostID string) (*object.OptionManager, error) {
 	host, err := hostsystem.FromID(client, hostID)
 	if err != nil {
 		return nil, err

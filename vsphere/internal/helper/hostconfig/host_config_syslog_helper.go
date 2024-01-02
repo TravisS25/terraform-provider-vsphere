@@ -10,50 +10,69 @@ import (
 )
 
 const (
-	SyslogHostKey = "Syslog.global.logHost"
+	SyslogHostKey     = "Syslog.global.logHost"
+	SyslogLogLevelKey = "Syslog.global.logLevel"
 )
 
 func HostConfigSyslogRead(ctx context.Context, d *schema.ResourceData, client *govmomi.Client, hostID string) error {
-	optManager, err := GetOptionManager(ctx, d, client, hostID)
+	optManager, err := GetOptionManager(ctx, client, hostID)
 	if err != nil {
 		return err
 	}
 
-	queryOpts, err := optManager.Query(ctx, SyslogHostKey)
+	hostOpts, err := optManager.Query(ctx, SyslogHostKey)
 	if err != nil {
 		return fmt.Errorf("error querying for log host on host '%s': %s", hostID, err)
 	}
 
-	if len(queryOpts) > 0 {
-		d.Set("log_host", queryOpts[0].GetOptionValue().Value)
+	if len(hostOpts) > 0 {
+		d.Set("log_host", hostOpts[0].GetOptionValue().Value)
+	}
+
+	logLvlOpts, err := optManager.Query(ctx, SyslogLogLevelKey)
+	if err != nil {
+		return fmt.Errorf("error querying for log level on host '%s': %s", hostID, err)
+	}
+
+	if len(logLvlOpts) > 0 {
+		d.Set("log_level", logLvlOpts[0].GetOptionValue().Value)
 	}
 
 	return nil
 }
 
 func UpdateHostConfigSyslog(ctx context.Context, d *schema.ResourceData, client *govmomi.Client, hostID string, isDelete bool) error {
-	optManager, err := GetOptionManager(ctx, d, client, hostID)
+	optManager, err := GetOptionManager(ctx, client, hostID)
 	if err != nil {
 		return err
 	}
 
-	var logHost *string
+	logHost := ""
+	logLvl := "info"
 
 	if !isDelete {
-		lh := d.Get("log_host").(string)
-		logHost = &lh
+		logHost = d.Get("log_host").(string)
+		logLvl = d.Get("log_level").(string)
 	}
 
-	if err = optManager.Update(
-		ctx,
-		[]types.BaseOptionValue{
-			&types.OptionValue{
-				Key:   SyslogHostKey,
-				Value: logHost,
-			},
+	optValues := []*types.OptionValue{
+		{
+			Key:   SyslogHostKey,
+			Value: logHost,
 		},
-	); err != nil {
-		return fmt.Errorf("error trying to update syslog options for host '%s': %s", hostID, err)
+		{
+			Key:   SyslogLogLevelKey,
+			Value: logLvl,
+		},
+	}
+
+	for _, v := range optValues {
+		if err = optManager.Update(
+			ctx,
+			[]types.BaseOptionValue{v},
+		); err != nil {
+			return fmt.Errorf("error trying to update syslog options for host '%s': %s", hostID, err)
+		}
 	}
 
 	return nil

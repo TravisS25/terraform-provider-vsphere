@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostconfig"
 )
 
@@ -31,8 +32,18 @@ func resourceVSphereHostConfigSyslog() *schema.Resource {
 			},
 			"log_host": {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 				Description: "The remote host to output logs to",
+			},
+			"log_level": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "info",
+				Description: "The log level to output logs",
+				ValidateFunc: validation.StringInSlice(
+					[]string{"info", "debug", "warning", "error"},
+					false,
+				),
 			},
 		},
 	}
