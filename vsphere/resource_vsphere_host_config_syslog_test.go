@@ -54,7 +54,7 @@ func testAccResourceVSphereHostConfigSyslogDestroy(name string) resource.TestChe
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[name]
 		if !ok {
-			return fmt.Errorf("%s key not found on the server", name)
+			return fmt.Errorf("'%s' key not found on the server", name)
 		}
 
 		client := testAccProvider.Meta().(*Client).vimClient
