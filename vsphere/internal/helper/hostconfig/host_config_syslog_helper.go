@@ -47,6 +47,7 @@ func UpdateHostConfigSyslog(ctx context.Context, d *schema.ResourceData, client 
 		return err
 	}
 
+	// Default values
 	logHost := ""
 	logLvl := "info"
 
@@ -71,7 +72,7 @@ func UpdateHostConfigSyslog(ctx context.Context, d *schema.ResourceData, client 
 			ctx,
 			[]types.BaseOptionValue{v},
 		); err != nil {
-			return fmt.Errorf("error trying to update syslog options for host '%s': %s", hostID, err)
+			return fmt.Errorf("error trying to update syslog setting '%s' for host '%s': %s", v.Key, hostID, err)
 		}
 	}
 

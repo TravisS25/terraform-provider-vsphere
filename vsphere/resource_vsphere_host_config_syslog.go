@@ -52,7 +52,7 @@ func resourceVSphereHostConfigSyslog() *schema.Resource {
 func resourceVSphereHostConfigSyslogRead(d *schema.ResourceData, meta interface{}) error {
 	hostID := d.Get("host_system_id").(string)
 
-	log.Printf("[INFO] reading syslog options for host '%s'", hostID)
+	log.Printf("[INFO] reading syslog settings for host '%s'", hostID)
 
 	err := hostconfig.HostConfigSyslogRead(context.Background(), d, meta.(*Client).vimClient, hostID)
 	if err != nil {
@@ -68,7 +68,7 @@ func resourceVSphereHostConfigSyslogCreate(d *schema.ResourceData, meta interfac
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	log.Printf("[INFO] creating syslog options for host '%s'", hostID)
+	log.Printf("[INFO] creating syslog settings for host '%s'", hostID)
 
 	err := hostconfig.UpdateHostConfigSyslog(context.Background(), d, client, hostID, false)
 	if err != nil {
@@ -84,7 +84,7 @@ func resourceVSphereHostConfigSyslogUpdate(d *schema.ResourceData, meta interfac
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	log.Printf("[INFO] updating syslog options for host '%s'", hostID)
+	log.Printf("[INFO] updating syslog settings for host '%s'", hostID)
 
 	err := hostconfig.UpdateHostConfigSyslog(context.Background(), d, client, hostID, false)
 	if err != nil {
@@ -98,7 +98,7 @@ func resourceVSphereHostConfigSyslogDelete(d *schema.ResourceData, meta interfac
 	client := meta.(*Client).vimClient
 	hostID := d.Get("host_system_id").(string)
 
-	log.Printf("[INFO] deleting syslog options for host '%s'", hostID)
+	log.Printf("[INFO] deleting syslog settings for host '%s'", hostID)
 
 	err := hostconfig.UpdateHostConfigSyslog(context.Background(), d, client, hostID, true)
 	if err != nil {

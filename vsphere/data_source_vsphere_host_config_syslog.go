@@ -38,7 +38,7 @@ func dataSourceVSphereHostConfigSyslog() *schema.Resource {
 func dataSourceVSphereHostConfigSyslogRead(d *schema.ResourceData, meta interface{}) error {
 	hostID := d.Get("host_system_id").(string)
 
-	log.Printf("[INFO] reading syslog options from data source for host '%s'", hostID)
+	log.Printf("[INFO] reading syslog settings from data source for host '%s'", hostID)
 
 	err := hostconfig.HostConfigSyslogRead(context.Background(), d, meta.(*Client).vimClient, hostID)
 	if err != nil {
