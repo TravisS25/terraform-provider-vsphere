@@ -124,8 +124,8 @@ func FromHostname(client *govmomi.Client, hostname string) (*object.HostSystem, 
 
 	if host != nil {
 		return host, nil
-
 	}
+
 	return nil, ErrHostnameNotFound
 }
 
