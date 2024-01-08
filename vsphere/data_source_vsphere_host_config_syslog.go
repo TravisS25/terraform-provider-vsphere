@@ -4,11 +4,11 @@
 package vsphere
 
 import (
-	"context"
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostconfig"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 )
 
 func dataSourceVSphereHostConfigSyslog() *schema.Resource {
@@ -17,9 +17,15 @@ func dataSourceVSphereHostConfigSyslog() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"host_system_id": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "Host id of machine to get syslog info from",
+				ExactlyOneOf: []string{"hostname"},
+			},
+			"hostname": {
 				Type:        schema.TypeString,
-				Required:    true,
-				Description: "Host id of machine to get syslog info from",
+				Optional:    true,
+				Description: "Hostname of machine to get syslog info from",
 			},
 			"log_host": {
 				Type:        schema.TypeString,
@@ -36,17 +42,18 @@ func dataSourceVSphereHostConfigSyslog() *schema.Resource {
 }
 
 func dataSourceVSphereHostConfigSyslogRead(d *schema.ResourceData, meta interface{}) error {
-	hostID := d.Get("host_system_id").(string)
-
-	log.Printf("[INFO] reading syslog settings from data source for host '%s'", hostID)
-
-	err := hostconfig.HostConfigSyslogRead(context.Background(), d, meta.(*Client).vimClient, hostID)
+	client := meta.(*Client).vimClient
+	host, tfID, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
 		return err
 	}
 
-	d.SetId(hostID)
-	d.Set("host_system_id", hostID)
+	log.Printf("[INFO] reading syslog settings from data source for host '%s'", host.Name())
 
+	if err = hostconfig.HostConfigSyslogRead(d, client, host); err != nil {
+		return err
+	}
+
+	d.SetId(tfID)
 	return nil
 }

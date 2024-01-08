@@ -60,7 +60,7 @@ func testAccResourceVSphereHostConfigSyslogDestroy(name string) resource.TestChe
 		client := testAccProvider.Meta().(*Client).vimClient
 		hostID := rs.Primary.ID
 		ctx := context.Background()
-		optManager, err := hostconfig.GetOptionManager(ctx, client, hostID)
+		optManager, err := hostconfig.GetOptionManager(client, host)
 		if err != nil {
 			return err
 		}

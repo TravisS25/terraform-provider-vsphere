@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostconfig"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 )
 
 func resourceVSphereHostConfigSyslog() *schema.Resource {
@@ -24,11 +26,18 @@ func resourceVSphereHostConfigSyslog() *schema.Resource {
 		},
 
 		Schema: map[string]*schema.Schema{
-			"host_system_id": {
+			// "host_system_id": {
+			// 	Type:         schema.TypeString,
+			// 	Optional:     true,
+			// 	ForceNew:     true,
+			// 	Description:  "Host id of machine that will update syslog",
+			// 	ExactlyOneOf: []string{"hostname"},
+			// },
+			"hostname": {
 				Type:        schema.TypeString,
 				Required:    true,
 				ForceNew:    true,
-				Description: "Host id of machine that will update syslog",
+				Description: "Hostname of machine that will update syslog",
 			},
 			"log_host": {
 				Type:        schema.TypeString,
@@ -50,44 +59,49 @@ func resourceVSphereHostConfigSyslog() *schema.Resource {
 }
 
 func resourceVSphereHostConfigSyslogRead(d *schema.ResourceData, meta interface{}) error {
-	hostID := d.Get("host_system_id").(string)
-
-	log.Printf("[INFO] reading syslog settings for host '%s'", hostID)
-
-	err := hostconfig.HostConfigSyslogRead(context.Background(), d, meta.(*Client).vimClient, hostID)
+	client := meta.(*Client).vimClient
+	host, err := hostsystem.FromHostname(client, d.Get("hostname").(string))
 	if err != nil {
 		return err
 	}
 
-	d.Set("host_system_id", hostID)
+	log.Printf("[INFO] reading syslog settings for host '%s'", host.Name())
+
+	if err = hostconfig.HostConfigSyslogRead(d, client, host); err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func resourceVSphereHostConfigSyslogCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-
-	log.Printf("[INFO] creating syslog settings for host '%s'", hostID)
-
-	err := hostconfig.UpdateHostConfigSyslog(context.Background(), d, client, hostID, false)
+	host, err := hostsystem.FromHostname(client, d.Get("hostname").(string))
 	if err != nil {
 		return err
 	}
 
-	d.SetId(hostID)
+	log.Printf("[INFO] creating syslog settings for host '%s'", host.Name())
+
+	if err = hostconfig.UpdateHostConfigSyslog(d, client, host, false); err != nil {
+		return err
+	}
+
+	d.SetId(host.Name())
 
 	return nil
 }
 
 func resourceVSphereHostConfigSyslogUpdate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-
-	log.Printf("[INFO] updating syslog settings for host '%s'", hostID)
-
-	err := hostconfig.UpdateHostConfigSyslog(context.Background(), d, client, hostID, false)
+	host, err := hostsystem.FromHostname(client, d.Get("hostname").(string))
 	if err != nil {
+		return err
+	}
+
+	log.Printf("[INFO] updating syslog settings for host '%s'", host.Name())
+
+	if err = hostconfig.UpdateHostConfigSyslog(d, client, host, false); err != nil {
 		return err
 	}
 
@@ -96,12 +110,14 @@ func resourceVSphereHostConfigSyslogUpdate(d *schema.ResourceData, meta interfac
 
 func resourceVSphereHostConfigSyslogDelete(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-
-	log.Printf("[INFO] deleting syslog settings for host '%s'", hostID)
-
-	err := hostconfig.UpdateHostConfigSyslog(context.Background(), d, client, hostID, true)
+	host, tfID, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
+		return err
+	}
+
+	log.Printf("[INFO] deleting syslog settings for host '%s'", tfID)
+
+	if err = hostconfig.UpdateHostConfigSyslog(d, client, host, true); err != nil {
 		return err
 	}
 
@@ -109,14 +125,35 @@ func resourceVSphereHostConfigSyslogDelete(d *schema.ResourceData, meta interfac
 }
 
 func resourceVSphereHostConfigSyslogImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
-	hostID := d.Id()
-	err := hostconfig.HostConfigSyslogRead(ctx, d, meta.(*Client).vimClient, hostID)
+	client := meta.(*Client).vimClient
+	tfID := d.Id()
+	host, err := hostsystem.FromID(client, tfID)
+	isVmWareID := true
+
 	if err != nil {
+		if !viapi.IsManagedObjectNotFoundError(err) {
+			return nil, err
+		}
+
+		host, err = hostsystem.FromHostname(client, tfID)
+		if err != nil {
+			return nil, err
+		}
+
+		isVmWareID = false
+	}
+
+	if err = hostconfig.HostConfigSyslogRead(d, meta.(*Client).vimClient, host); err != nil {
 		return nil, err
 	}
 
-	d.SetId(hostID)
-	d.Set("host_system_id", hostID)
+	d.SetId(tfID)
+
+	if isVmWareID {
+		d.Set("host_system_id", tfID)
+	} else {
+		d.Set("hostname", tfID)
+	}
 
 	return []*schema.ResourceData{d}, nil
 }
