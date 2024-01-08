@@ -5,17 +5,26 @@ package hostsystem
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/view"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+)
+
+var (
+	ErrHostnameNotFound = errors.New("could not find host with given hostname")
 )
 
 // SystemOrDefault returns a HostSystem from a specific host name and
@@ -58,6 +67,88 @@ func FromID(client *govmomi.Client, id string) (*object.HostSystem, error) {
 	}
 	log.Printf("[DEBUG] Host system found: %s", hs.Reference().Value)
 	return hs.(*object.HostSystem), nil
+}
+
+// FromHostname locates a HostSystem by hostname
+// Will return error type "ErrHostnameNotFound" if no host is found
+func FromHostname(client *govmomi.Client, hostname string) (*object.HostSystem, error) {
+	log.Printf("[DEBUG] Locating host system with hostname %s", hostname)
+	finder := find.NewFinder(client.Client, false)
+
+	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
+	defer cancel()
+
+	dcs, err := finder.DatacenterList(ctx, "*")
+	if err != nil {
+		return nil, err
+	}
+
+	counter := 0
+
+	var host *object.HostSystem
+
+	for _, dc := range dcs {
+		viewMgr := view.NewManager(client.Client)
+		dcView, err := viewMgr.CreateContainerView(ctx, dc.Reference(), []string{"HostSystem"}, true)
+		if err != nil {
+			fmt.Printf("error trying to create container: %s", err)
+			os.Exit(1)
+		}
+
+		var moHosts []mo.HostSystem
+		if err = dcView.RetrieveWithFilter(ctx, []string{"HostSystem"}, []string{"name"}, &moHosts, property.Filter{}); err != nil {
+			fmt.Printf("error trying to retrieve hosts: %s", err)
+			os.Exit(1)
+		}
+
+		// Loop through hosts for given dc and determine if exists
+		// Throws error if can't find
+		for _, h := range moHosts {
+			if h.Name == hostname {
+				counter++
+
+				if counter > 1 {
+					return nil, fmt.Errorf("more than one host with hostname '%s' was found", hostname)
+				}
+
+				f := find.NewFinder(client.Client, true)
+				ref, err := f.ObjectReference(ctx, h.Self)
+				if err != nil {
+					return nil, fmt.Errorf("error trying to retrieve host object reference: %s", err)
+				}
+
+				host = ref.(*object.HostSystem)
+			}
+		}
+	}
+
+	if host != nil {
+		return host, nil
+	}
+
+	return nil, ErrHostnameNotFound
+}
+
+// FromHostnameOrID locates HostSystem by either id or hostname depending on what's passed through ResourceData
+// Returns hostsystem along with identifier used to get hostsystem passed from ResourceData
+func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.HostSystem, string, error) {
+	var hostID string
+	var host *object.HostSystem
+	var err error
+
+	if d.Get("host_system_id").(string) != "" {
+		hostID = d.Get("host_system_id").(string)
+		host, err = FromID(client, d.Get("host_system_id").(string))
+	} else {
+		hostID = d.Get("hostname").(string)
+		host, err = FromHostname(client, d.Get("hostname").(string))
+	}
+
+	if err != nil {
+		return nil, "", fmt.Errorf("error while trying to retrieve host '%s': %s", hostID, err)
+	}
+
+	return host, hostID, nil
 }
 
 // Properties is a convenience method that wraps fetching the HostSystem MO
