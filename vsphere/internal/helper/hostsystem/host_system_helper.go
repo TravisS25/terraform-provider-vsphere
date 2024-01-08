@@ -83,6 +83,10 @@ func FromHostname(client *govmomi.Client, hostname string) (*object.HostSystem, 
 		return nil, err
 	}
 
+	counter := 0
+
+	var host *object.HostSystem
+
 	for _, dc := range dcs {
 		viewMgr := view.NewManager(client.Client)
 		dcView, err := viewMgr.CreateContainerView(ctx, dc.Reference(), []string{"HostSystem"}, true)
@@ -91,25 +95,35 @@ func FromHostname(client *govmomi.Client, hostname string) (*object.HostSystem, 
 			os.Exit(1)
 		}
 
-		var hosts []mo.HostSystem
-		if err = dcView.RetrieveWithFilter(ctx, []string{"HostSystem"}, []string{"name"}, &hosts, property.Filter{}); err != nil {
+		var moHosts []mo.HostSystem
+		if err = dcView.RetrieveWithFilter(ctx, []string{"HostSystem"}, []string{"name"}, &moHosts, property.Filter{}); err != nil {
 			fmt.Printf("error trying to retrieve hosts: %s", err)
 			os.Exit(1)
 		}
 
 		// Loop through hosts for given dc and determine if exists
 		// Throws error if can't find
-		for _, host := range hosts {
-			if host.Name == hostname {
+		for _, h := range moHosts {
+			if h.Name == hostname {
+				counter++
+
+				if counter > 1 {
+					return nil, fmt.Errorf("more than one host with hostname '%s' was found", hostname)
+				}
+
 				f := find.NewFinder(client.Client, true)
-				ref, err := f.ObjectReference(ctx, host.Self)
+				ref, err := f.ObjectReference(ctx, h.Self)
 				if err != nil {
 					return nil, fmt.Errorf("error trying to retrieve host object reference: %s", err)
 				}
 
-				return ref.(*object.HostSystem), nil
+				host = ref.(*object.HostSystem)
 			}
 		}
+	}
+
+	if host != nil {
+		return host, nil
 	}
 
 	return nil, ErrHostnameNotFound
