@@ -158,11 +158,11 @@ func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.H
 	if d.Get("host_system_id") != nil && d.Get("host_system_id") != "" {
 		tfIDName = "host_system_id"
 		tfVal = d.Get(tfIDName).(string)
-		host, err = FromID(client, tfIDName)
+		host, err = FromID(client, tfVal)
 	} else if d.Get("hostname") != nil && d.Get("hostname") != "" {
 		tfIDName = "hostname"
 		tfVal = d.Get(tfIDName).(string)
-		host, err = FromHostname(client, tfIDName)
+		host, err = FromHostname(client, tfVal)
 	} else {
 		return nil, hostReturn{}, fmt.Errorf("no valid tf id attribute passed.  One of the following should be passed from resource: 'host_system_id', 'hostname'")
 	}
