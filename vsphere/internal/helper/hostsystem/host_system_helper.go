@@ -158,11 +158,11 @@ func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.H
 	if d.Get("host_system_id") != nil && d.Get("host_system_id") != "" {
 		tfIDName = "host_system_id"
 		tfVal = d.Get(tfIDName).(string)
-		host, err = FromID(client, tfIDName)
+		host, err = FromID(client, tfVal)
 	} else if d.Get("hostname") != nil && d.Get("hostname") != "" {
 		tfIDName = "hostname"
 		tfVal = d.Get(tfIDName).(string)
-		host, err = FromHostname(client, tfIDName)
+		host, err = FromHostname(client, tfVal)
 	} else {
 		return nil, hostReturn{}, fmt.Errorf("no valid tf id attribute passed.  One of the following should be passed from resource: 'host_system_id', 'hostname'")
 	}
@@ -174,7 +174,7 @@ func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.H
 	return host, hostReturn{IDName: tfIDName, Value: tfVal}, nil
 }
 
-// CheckIfHostname is a helper function that allows users to pass in an id and determine if that id exists
+// CheckIfHostnameOrID is a helper function that allows users to pass in an id and determine if that id exists
 // based on either the vmware generated host id or hostname
 //
 // The bool that is returned indicates whether the "tfID" parameter passed was found by hostname
@@ -182,26 +182,26 @@ func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.H
 //
 // This is a "shim" function that is mainly used in import functions of any resource that relies on an esxi host id
 // or hostname as an attribute
-func CheckIfHostname(client *govmomi.Client, tfID string) (*object.HostSystem, bool, error) {
+func CheckIfHostnameOrID(client *govmomi.Client, tfID string) (*object.HostSystem, hostReturn, error) {
 	host, err := FromID(client, tfID)
 	if err != nil {
 		if !viapi.IsManagedObjectNotFoundError(err) {
-			return nil, false, err
+			return nil, hostReturn{}, err
 		}
 
 		host, err = FromHostname(client, tfID)
 		if err != nil {
 			if !errors.Is(err, ErrHostnameNotFound) {
-				return nil, false, err
+				return nil, hostReturn{}, err
 			}
 
-			return nil, false, fmt.Errorf("could not find host based off of id or hostname")
+			return nil, hostReturn{}, fmt.Errorf("could not find host based off of id or hostname")
 		}
 
-		return host, true, nil
+		return host, hostReturn{IDName: "hostname", Value: host.Name()}, nil
 	}
 
-	return host, false, nil
+	return host, hostReturn{IDName: "host_system_id", Value: host.Reference().Value}, nil
 }
 
 // Properties is a convenience method that wraps fetching the HostSystem MO
