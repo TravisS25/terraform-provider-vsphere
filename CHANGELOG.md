@@ -4,6 +4,11 @@
 FEATURES:
 * `resource/host_config_syslog` : Enables ability to update syslog settings for esxi host
 
+## 2.9.1 (January 9, 2024)
+
+CHORES:
+* Added shim helper functions that allows users to use vmware generated id or hostname as the id for a resource.  The reason for doing this is that whenever an esxi host is removed from vmware for whatever reason (maintenance, power outage etc.) and re-added, vmware generates a new host id for the same host which breaks any resource using that host id (which is most of them).  By using hostname as id, whenever the same host gets re-added back to vmware nothing breaks as the hostname will stay the same after being re-added
+
 ## 2.9.0 (December 5, 2023)
 
 FEATURES:
