@@ -141,14 +141,12 @@ func FromHostname(client *govmomi.Client, hostname string) (*object.HostSystem, 
 // FromHostnameOrID locates HostSystem by either id or hostname depending on what's passed through ResourceData
 // Returns hostsystem along with identifier used to get hostsystem passed from ResourceData
 //
-// This is a "shim" function to allow backwards compatibility for resources currently using the generated vmware id
-// as value for any resource that requires an esxi id as attribute or to use the new way of using a hostname as the id
-// for any resource that requires an esxi id
+// This is a "shim" function thats allows users to use vmware generated id or hostname as the id for a resource
 //
 // The reason for doing this is that whenever an esxi host is removed from vmware for whatever reason (maintenance, power outage etc.)
 // and re-added, vmware generates a new id for the same host which breaks any resource using that id (which is most of them)
 //
-// This function, along with updating the attribute api of any resources using esxi host id, allows users to continue using vmware
+// This function, along with updating the attribute api of any resources using esxi host id, will allow users to continue using vmware
 // generated id without breaking but also allows users to use hostname as the id which generally doesn't change and/or is unique
 func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.HostSystem, hostReturn, error) {
 	var tfIDName, tfVal string
