@@ -23,6 +23,15 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
+// hostReturn is a config struct that allows us to return both the esxi host id key name
+// along with its value
+//
+// This is mainly used for the "FromHostnameOrID" shim function
+type hostReturn struct {
+	IDName string
+	Value  string
+}
+
 var (
 	ErrHostnameNotFound = errors.New("could not find host with given hostname")
 )
@@ -124,31 +133,75 @@ func FromHostname(client *govmomi.Client, hostname string) (*object.HostSystem, 
 
 	if host != nil {
 		return host, nil
-
 	}
+
 	return nil, ErrHostnameNotFound
 }
 
 // FromHostnameOrID locates HostSystem by either id or hostname depending on what's passed through ResourceData
 // Returns hostsystem along with identifier used to get hostsystem passed from ResourceData
-func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.HostSystem, string, error) {
-	var hostID string
+//
+// This is a "shim" function to allow backwards compatibility for resources currently using the generated vmware id
+// as value for any resource that requires an esxi id as attribute or to use the new way of using a hostname as the id
+// for any resource that requires an esxi id
+//
+// The reason for doing this is that whenever an esxi host is removed from vmware for whatever reason (maintenance, power outage etc.)
+// and re-added, vmware generates a new id for the same host which breaks any resource using that id (which is most of them)
+//
+// This function, along with updating the attribute api of any resources using esxi host id, allows users to continue using vmware
+// generated id without breaking but also allows users to use hostname as the id which generally doesn't change and/or is unique
+func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.HostSystem, hostReturn, error) {
+	var tfIDName, tfVal string
 	var host *object.HostSystem
 	var err error
 
-	if d.Get("host_system_id").(string) != "" {
-		hostID = d.Get("host_system_id").(string)
-		host, err = FromID(client, d.Get("host_system_id").(string))
+	if d.Get("host_system_id") != nil && d.Get("host_system_id") != "" {
+		tfIDName = "host_system_id"
+		tfVal = d.Get(tfIDName).(string)
+		host, err = FromID(client, tfIDName)
+	} else if d.Get("hostname") != nil && d.Get("hostname") != "" {
+		tfIDName = "hostname"
+		tfVal = d.Get(tfIDName).(string)
+		host, err = FromHostname(client, tfIDName)
 	} else {
-		hostID = d.Get("hostname").(string)
-		host, err = FromHostname(client, d.Get("hostname").(string))
+		return nil, hostReturn{}, fmt.Errorf("no valid tf id attribute passed.  One of the following should be passed from resource: 'host_system_id', 'hostname'")
 	}
 
 	if err != nil {
-		return nil, "", fmt.Errorf("error while trying to retrieve host '%s': %s", hostID, err)
+		return nil, hostReturn{}, fmt.Errorf("error while trying to retrieve host '%s': %s", tfVal, err)
 	}
 
-	return host, hostID, nil
+	return host, hostReturn{IDName: tfIDName, Value: tfVal}, nil
+}
+
+// CheckIfHostname is a helper function that allows users to pass in an id and determine if that id exists
+// based on either the vmware generated host id or hostname
+//
+// The bool that is returned indicates whether the "tfID" parameter passed was found by hostname
+// If "tfID" was found by hostname, will return true
+//
+// This is a "shim" function that is mainly used in import functions of any resource that relies on an esxi host id
+// or hostname as an attribute
+func CheckIfHostname(client *govmomi.Client, tfID string) (*object.HostSystem, bool, error) {
+	host, err := FromID(client, tfID)
+	if err != nil {
+		if !viapi.IsManagedObjectNotFoundError(err) {
+			return nil, false, err
+		}
+
+		host, err = FromHostname(client, tfID)
+		if err != nil {
+			if !errors.Is(err, ErrHostnameNotFound) {
+				return nil, false, err
+			}
+
+			return nil, false, fmt.Errorf("could not find host based off of id or hostname")
+		}
+
+		return host, true, nil
+	}
+
+	return host, false, nil
 }
 
 // Properties is a convenience method that wraps fetching the HostSystem MO
