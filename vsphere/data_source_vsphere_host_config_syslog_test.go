@@ -20,12 +20,22 @@ func TestAccDataSourceVSphereHostConfigSyslog_basic(t *testing.T) {
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
-			testAccCheckEnvVariablesF(t, []string{"ESXI_LOG_HOST"})
+			testAccCheckEnvVariablesF(t, []string{"ESX_LOG_HOST", "ESX_HOSTNAME"})
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccDataSourceVSphereHostConfigSyslogConfig(),
+				Config: testAccDataSourceVSphereHostConfigSyslogConfig(false),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestMatchResourceAttr(
+						resourceName,
+						"id",
+						regexp.MustCompile("^host-"),
+					),
+				),
+			},
+			{
+				Config: testAccDataSourceVSphereHostConfigSyslogConfig(true),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestMatchResourceAttr(
 						resourceName,
@@ -38,18 +48,24 @@ func TestAccDataSourceVSphereHostConfigSyslog_basic(t *testing.T) {
 	})
 }
 
-func testAccDataSourceVSphereHostConfigSyslogConfig() string {
+func testAccDataSourceVSphereHostConfigSyslogConfig(useHostname bool) string {
+	idStr := "host_system_id = data.vsphere_host.roothost1.id"
+
+	if useHostname {
+		idStr = "hostname = data.vsphere_host.roothost1.hostname"
+	}
+
 	return fmt.Sprintf(
 		`
 		%s
 
 		resource "vsphere_host_config_syslog" "h1" {
-			host_system_id = data.vsphere_host.roothost1.id
+			%s
 			log_host = "%s"
 		}
 
 		data "vsphere_host_config_syslog" "h1" {
-			host_system_id = vsphere_host_config_syslog.h1.id
+			%s
 		}
 		`,
 		testhelper.CombineConfigs(
@@ -57,6 +73,8 @@ func testAccDataSourceVSphereHostConfigSyslogConfig() string {
 			testhelper.ConfigDataRootComputeCluster1(),
 			testhelper.ConfigDataRootHost1(),
 		),
+		idStr,
 		os.Getenv("ESXI_LOG_HOST"),
+		idStr,
 	)
 }

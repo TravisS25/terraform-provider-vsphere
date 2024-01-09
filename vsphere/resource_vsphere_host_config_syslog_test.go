@@ -82,13 +82,19 @@ func testAccResourceVSphereHostConfigSyslogDestroy(name string) resource.TestChe
 	}
 }
 
-func testAccResourceVSphereHostConfigSyslogConfig(logLvl string) string {
+func testAccResourceVSphereHostConfigSyslogConfig(logLvl string, useHostname bool) string {
+	idStr := "host_system_id = data.vsphere_host.roothost1.id"
+
+	if useHostname {
+		idStr = "hostname = data.vsphere_host.roothost1.hostname"
+	}
+
 	return fmt.Sprintf(
 		`
 		%s
 
 		resource "vsphere_host_config_syslog" "h1" {
-			host_system_id = data.vsphere_host.roothost1.id
+			%s
 			log_host = "%s"
 			log_level = "%s"
 		}
@@ -98,6 +104,7 @@ func testAccResourceVSphereHostConfigSyslogConfig(logLvl string) string {
 			testhelper.ConfigDataRootComputeCluster1(),
 			testhelper.ConfigDataRootHost1(),
 		),
+		idStr,
 		os.Getenv("ESXI_LOG_HOST"),
 		logLvl,
 	)

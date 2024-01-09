@@ -43,7 +43,7 @@ func dataSourceVSphereHostConfigSyslog() *schema.Resource {
 
 func dataSourceVSphereHostConfigSyslogRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	host, tfID, err := hostsystem.FromHostnameOrID(client, d)
+	host, hostReturn, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
 		return err
 	}
@@ -54,6 +54,6 @@ func dataSourceVSphereHostConfigSyslogRead(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	d.SetId(tfID)
+	d.SetId(hostReturn.Value)
 	return nil
 }
