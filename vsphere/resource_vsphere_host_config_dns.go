@@ -195,7 +195,7 @@ func resourceVSphereHostConfigDNSImport(d *schema.ResourceData, meta interface{}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
 
-	host, is_hostname, err := hostsystem.CheckIfHostname(c, d.Id())
+	host, tfID, err := hostsystem.CheckIfHostnameOrID(c, d.Id())
 	if err != nil {
 		return nil, fmt.Errorf("import func - error getting host ID FromHostnameOrID")
 	}
@@ -214,14 +214,7 @@ func resourceVSphereHostConfigDNSImport(d *schema.ResourceData, meta interface{}
 	dns_config := hostNetworkProps.DnsConfig.GetHostDnsConfig()
 
 	d.SetId(d.Id())
-	if is_hostname {
-		d.Set("hostname", d.Id())
-	} else {
-		d.Set("host_system_id", d.Id())
-	}
-
-	// d.set(hostID.tfIDName, hostID.Tfval)
-
+	d.Set(tfID.IDName, tfID.Value)
 	d.Set("dns_hostname", dns_config.HostName)
 	d.Set("dns_servers", dns_config.Address)
 	d.Set("search_domains", dns_config.SearchDomain)
