@@ -105,7 +105,7 @@ func resourceVSphereHostConfigDNSCreate(d *schema.ResourceData, meta interface{}
 	}
 
 	// add the resource into the terraform state
-	d.SetId(hostID)
+	d.SetId(hostID.Value)
 
 	return resourceVSphereHostConfigDNSRead(d, meta)
 }
@@ -117,7 +117,7 @@ func resourceVSphereHostConfigDNSRead(d *schema.ResourceData, meta interface{}) 
 
 	host, _, err := hostsystem.FromHostnameOrID(c, d)
 	if err != nil {
-		return fmt.Errorf("read func - error getting host ID FromHostnameOrID")
+		return fmt.Errorf("read func - error getting host ID FromHostnameOrID. Err: %s", err)
 	}
 
 	hns, err := hostNetworkSystemFromHostSystemID(c, host.Reference().Value)
@@ -195,8 +195,7 @@ func resourceVSphereHostConfigDNSImport(d *schema.ResourceData, meta interface{}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
 
-	// this should get removed for new import helper func
-	host, _, err := hostsystem.FromHostnameOrID(c, d)
+	host, is_hostname, err := hostsystem.CheckIfHostname(c, d.Id())
 	if err != nil {
 		return nil, fmt.Errorf("import func - error getting host ID FromHostnameOrID")
 	}
@@ -213,11 +212,17 @@ func resourceVSphereHostConfigDNSImport(d *schema.ResourceData, meta interface{}
 	}
 
 	dns_config := hostNetworkProps.DnsConfig.GetHostDnsConfig()
-	// update this to the new ID value from our new import helper function
+
 	d.SetId(d.Id())
-	// put some logic here to set either "host_system_id" or "hostname" and swap d.Id() with new ID from import helper func
-	d.Set("host_system_id", d.Id())
-	d.Set("hostname", dns_config.HostName)
+	if is_hostname {
+		d.Set("hostname", d.Id())
+	} else {
+		d.Set("host_system_id", d.Id())
+	}
+
+	// d.set(hostID.tfIDName, hostID.Tfval)
+
+	d.Set("dns_hostname", dns_config.HostName)
 	d.Set("dns_servers", dns_config.Address)
 	d.Set("search_domains", dns_config.SearchDomain)
 	d.Set("domain_name", dns_config.DomainName)
