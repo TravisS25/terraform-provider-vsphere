@@ -20,7 +20,7 @@ func TestAccDataSourceVSphereHostConfigSyslog_basic(t *testing.T) {
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
-			testAccCheckEnvVariablesF(t, []string{"ESX_LOG_HOST", "ESX_HOSTNAME"})
+			testAccCheckEnvVariablesF(t, []string{"ESX_LOG_HOST", "TF_VAR_VSPHERE_ESXI1"})
 		},
 		Providers: testAccProviders,
 		Steps: []resource.TestStep{

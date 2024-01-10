@@ -10,47 +10,80 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostconfig"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/testhelper"
 	"github.com/vmware/govmomi/object"
 )
 
-func TestAccResourceVSphereHostConfigSyslog_basic(t *testing.T) {
-	resourceName := "vsphere_host_config_syslog.h1"
+const (
+	hostConfigSyslogResourceName = "vsphere_host_config_syslog.h1"
+	hostConfigSyslogLogLvl       = "info"
+	hostConfigSyslogNewLogLvl    = "debug"
+)
 
-	logLvl := "info"
-	newLogLvl := "debug"
-
+func TestAccResourceVSphereHostConfigSyslog_UsingHostSystemID(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
-			testAccCheckEnvVariablesF(t, []string{"ESXI_LOG_HOST"})
+			testAccCheckEnvVariablesF(t, []string{"ESX_LOG_HOST", "TF_VAR_VSPHERE_ESXI1"})
 		},
 		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereHostConfigSyslogDestroy(resourceName),
+		CheckDestroy: testAccResourceVSphereHostConfigSyslogDestroy(hostConfigSyslogResourceName, false),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccResourceVSphereHostConfigSyslogConfig(logLvl),
+				Config: testAccResourceVSphereHostConfigSyslogConfig(hostConfigSyslogLogLvl, false),
 				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereHostConfigSyslogValidate(resourceName, logLvl),
+					testAccResourceVSphereHostConfigSyslogValidate(hostConfigSyslogResourceName, hostConfigSyslogLogLvl, false),
 				),
 			},
 			{
-				Config: testAccResourceVSphereHostConfigSyslogConfig(newLogLvl),
+				Config: testAccResourceVSphereHostConfigSyslogConfig(hostConfigSyslogNewLogLvl, false),
 				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereHostConfigSyslogValidate(resourceName, newLogLvl),
+					testAccResourceVSphereHostConfigSyslogValidate(hostConfigSyslogResourceName, hostConfigSyslogNewLogLvl, false),
 				),
 			},
 			{
-				ResourceName: resourceName,
-				Config:       testAccResourceVSphereHostConfigSyslogConfig(newLogLvl),
+				ResourceName: hostConfigSyslogResourceName,
+				Config:       testAccResourceVSphereHostConfigSyslogConfig(hostConfigSyslogNewLogLvl, false),
 				ImportState:  true,
 			},
 		},
 	})
 }
 
-func testAccResourceVSphereHostConfigSyslogDestroy(name string) resource.TestCheckFunc {
+func TestAccResourceVSphereHostConfigSyslog_UsingHostname(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			RunSweepers()
+			testAccPreCheck(t)
+			testAccCheckEnvVariablesF(t, []string{"ESX_LOG_HOST", "TF_VAR_VSPHERE_ESXI1"})
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereHostConfigSyslogDestroy(hostConfigSyslogResourceName, true),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccResourceVSphereHostConfigSyslogConfig(hostConfigSyslogLogLvl, true),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereHostConfigSyslogValidate(hostConfigSyslogResourceName, hostConfigSyslogLogLvl, true),
+				),
+			},
+			{
+				Config: testAccResourceVSphereHostConfigSyslogConfig(hostConfigSyslogNewLogLvl, true),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereHostConfigSyslogValidate(hostConfigSyslogResourceName, hostConfigSyslogNewLogLvl, true),
+				),
+			},
+			{
+				ResourceName: hostConfigSyslogResourceName,
+				Config:       testAccResourceVSphereHostConfigSyslogConfig(hostConfigSyslogNewLogLvl, true),
+				ImportState:  true,
+			},
+		},
+	})
+}
+
+func testAccResourceVSphereHostConfigSyslogDestroy(name string, useHostname bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[name]
 		if !ok {
@@ -60,6 +93,20 @@ func testAccResourceVSphereHostConfigSyslogDestroy(name string) resource.TestChe
 		client := testAccProvider.Meta().(*Client).vimClient
 		hostID := rs.Primary.ID
 		ctx := context.Background()
+
+		var host *object.HostSystem
+		var err error
+
+		if useHostname {
+			host, err = hostsystem.FromHostname(client, hostID)
+		} else {
+			host, err = hostsystem.FromID(client, hostID)
+		}
+
+		if err != nil {
+			return err
+		}
+
 		optManager, err := hostconfig.GetOptionManager(client, host)
 		if err != nil {
 			return err
@@ -110,7 +157,7 @@ func testAccResourceVSphereHostConfigSyslogConfig(logLvl string, useHostname boo
 	)
 }
 
-func testAccResourceVSphereHostConfigSyslogValidate(resourceName, logLvl string) resource.TestCheckFunc {
+func testAccResourceVSphereHostConfigSyslogValidate(resourceName, logLvl string, useHostname bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[resourceName]
 
@@ -121,7 +168,21 @@ func testAccResourceVSphereHostConfigSyslogValidate(resourceName, logLvl string)
 		client := testAccProvider.Meta().(*Client).vimClient
 		hostID := rs.Primary.ID
 		ctx := context.Background()
-		optManager, err := hostconfig.GetOptionManager(ctx, client, hostID)
+
+		var host *object.HostSystem
+		var err error
+
+		if useHostname {
+			host, err = hostsystem.FromHostname(client, hostID)
+		} else {
+			host, err = hostsystem.FromID(client, hostID)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		optManager, err := hostconfig.GetOptionManager(client, host)
 		if err != nil {
 			return err
 		}
