@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/testhelper"
 )
 
-func TestAccDataSourceVSphereHostConfigSyslog_basic(t *testing.T) {
+func TestAccDataSourceVSphereHostConfigSyslog_UsingHostSystemID(t *testing.T) {
 	resourceName := "data.vsphere_host_config_syslog.h1"
 
 	resource.Test(t, resource.TestCase{
@@ -43,6 +43,7 @@ func TestAccDataSourceVSphereHostConfigSyslog_basic(t *testing.T) {
 						regexp.MustCompile("^host-"),
 					),
 				),
+				ExpectError: regexp.MustCompile("Attribute 'id' didn't match"),
 			},
 		},
 	})
@@ -52,7 +53,7 @@ func testAccDataSourceVSphereHostConfigSyslogConfig(useHostname bool) string {
 	idStr := "host_system_id = data.vsphere_host.roothost1.id"
 
 	if useHostname {
-		idStr = "hostname = data.vsphere_host.roothost1.hostname"
+		idStr = `hostname = "` + os.Getenv("TF_VAR_VSPHERE_ESXI1") + `"`
 	}
 
 	return fmt.Sprintf(

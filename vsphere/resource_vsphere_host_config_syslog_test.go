@@ -133,7 +133,7 @@ func testAccResourceVSphereHostConfigSyslogConfig(logLvl string, useHostname boo
 	idStr := "host_system_id = data.vsphere_host.roothost1.id"
 
 	if useHostname {
-		idStr = "hostname = data.vsphere_host.roothost1.hostname"
+		idStr = `hostname = "` + os.Getenv("TF_VAR_VSPHERE_ESXI1") + `"`
 	}
 
 	return fmt.Sprintf(
@@ -152,7 +152,7 @@ func testAccResourceVSphereHostConfigSyslogConfig(logLvl string, useHostname boo
 			testhelper.ConfigDataRootHost1(),
 		),
 		idStr,
-		os.Getenv("ESXI_LOG_HOST"),
+		os.Getenv("ESX_LOG_HOST"),
 		logLvl,
 	)
 }
