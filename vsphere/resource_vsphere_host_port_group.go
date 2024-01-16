@@ -9,15 +9,23 @@ import (
 	"context"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
 )
 
 func resourceVSphereHostPortGroup() *schema.Resource {
 	s := map[string]*schema.Schema{
 		"host_system_id": {
+			Type:         schema.TypeString,
+			Description:  "The managed object ID of the host to set the virtual switch up on.",
+			Optional:     true,
+			ForceNew:     true,
+			ExactlyOneOf: []string{"hostname"},
+		},
+		"hostname": {
 			Type:        schema.TypeString,
-			Description: "The managed object ID of the host to set the virtual switch up on.",
-			Required:    true,
+			Description: "The hostname of the host to set the virtual switch up on.",
+			Optional:    true,
 			ForceNew:    true,
 		},
 		"computed_policy": {
@@ -60,8 +68,12 @@ func resourceVSphereHostPortGroup() *schema.Resource {
 func resourceVSphereHostPortGroupCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
 	name := d.Get("name").(string)
-	hsID := d.Get("host_system_id").(string)
-	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return err
+	}
+
+	ns, err := hostNetworkSystemFromHostSystem(host)
 	if err != nil {
 		return fmt.Errorf("error loading network system: %s", err)
 	}
@@ -73,7 +85,7 @@ func resourceVSphereHostPortGroupCreate(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("error adding port group: %s", err)
 	}
 
-	saveHostPortGroupID(d, hsID, name)
+	saveHostPortGroupID(d, hr.Value, name)
 	return resourceVSphereHostPortGroupRead(d, meta)
 }
 
@@ -83,7 +95,13 @@ func resourceVSphereHostPortGroupRead(d *schema.ResourceData, meta interface{}) 
 	if err != nil {
 		return err
 	}
-	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
+
+	host, _, err := hostsystem.CheckIfHostnameOrID(client, hsID)
+	if err != nil {
+		return fmt.Errorf("error retrieving host on host port group read: %s", err)
+	}
+
+	ns, err := hostNetworkSystemFromHostSystem(host)
 	if err != nil {
 		return fmt.Errorf("error loading host network system: %s", err)
 	}
@@ -118,7 +136,13 @@ func resourceVSphereHostPortGroupUpdate(d *schema.ResourceData, meta interface{}
 	if err != nil {
 		return err
 	}
-	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
+
+	host, _, err := hostsystem.CheckIfHostnameOrID(client, hsID)
+	if err != nil {
+		return fmt.Errorf("error retrieving host on host port group update: %s", err)
+	}
+
+	ns, err := hostNetworkSystemFromHostSystem(host)
 	if err != nil {
 		return fmt.Errorf("error loading host network system: %s", err)
 	}
@@ -139,7 +163,13 @@ func resourceVSphereHostPortGroupDelete(d *schema.ResourceData, meta interface{}
 	if err != nil {
 		return err
 	}
-	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
+
+	host, _, err := hostsystem.CheckIfHostnameOrID(client, hsID)
+	if err != nil {
+		return fmt.Errorf("error retrieving host on host port group delete: %s", err)
+	}
+
+	ns, err := hostNetworkSystemFromHostSystem(host)
 	if err != nil {
 		return fmt.Errorf("error loading host network system: %s", err)
 	}
@@ -153,13 +183,20 @@ func resourceVSphereHostPortGroupDelete(d *schema.ResourceData, meta interface{}
 	return nil
 }
 
-func resourceVSphereHostPortGroupImport(d *schema.ResourceData, _ interface{}) ([]*schema.ResourceData, error) {
+func resourceVSphereHostPortGroupImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	hsID, name, err := portGroupIDsFromResourceID(d)
 	if err != nil {
 		return []*schema.ResourceData{}, err
 	}
 
-	err = d.Set("host_system_id", hsID)
+	client := meta.(*Client).vimClient
+
+	_, hr, err := hostsystem.CheckIfHostnameOrID(client, hsID)
+	if err != nil {
+		return []*schema.ResourceData{}, fmt.Errorf("error retrieving host on host port group import: %s", err)
+	}
+
+	err = d.Set(hr.IDName, hsID)
 	if err != nil {
 		return []*schema.ResourceData{}, err
 	}

@@ -47,10 +47,17 @@ func resourceVsphereNic() *schema.Resource {
 
 func vNicSchema() map[string]*schema.Schema {
 	base := BaseVMKernelSchema()
-	base["host"] = &schema.Schema{
+	base["host_system_id"] = &schema.Schema{
+		Type:         schema.TypeString,
+		Optional:     true,
+		Description:  "The host id of the host the interface belongs to",
+		ForceNew:     true,
+		ExactlyOneOf: []string{"hostname"},
+	}
+	base["hostname"] = &schema.Schema{
 		Type:        schema.TypeString,
-		Required:    true,
-		Description: "ESX host the interface belongs to",
+		Optional:    true,
+		Description: "The hostname of the host the interface belongs to",
 		ForceNew:    true,
 	}
 
@@ -58,13 +65,19 @@ func vNicSchema() map[string]*schema.Schema {
 }
 
 func resourceVsphereNicRead(d *schema.ResourceData, meta interface{}) error {
-	log.Printf("[DEBUG] starting resource_vnic")
+	log.Printf("[DEBUG] Entering vsphere vnic read function")
+
 	ctx := context.TODO()
 	client := meta.(*Client).vimClient
 
-	hostID, nicID := splitHostIDNicID(d)
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host on vnic read: %s", err)
+	}
 
-	vnic, err := getVnicFromHost(ctx, client, hostID, nicID)
+	_, nicID, _ := splitHostIDNicID(d)
+
+	vnic, err := getVnicFromHost(ctx, client, host, nicID)
 	if err != nil {
 		log.Printf("[DEBUG] Nic (%s) not found. Probably deleted.", nicID)
 		d.SetId("")
@@ -133,13 +146,7 @@ func resourceVsphereNicRead(d *schema.ResourceData, meta interface{}) error {
 		}
 	}
 
-	// get enabled services
-	hostSystem, err := hostsystem.FromID(client, hostID)
-	if err != nil {
-		return err
-	}
-
-	hostVnicMgr, err := hostSystem.ConfigManager().VirtualNicManager(ctx)
+	hostVnicMgr, err := host.ConfigManager().VirtualNicManager(ctx)
 	if err != nil {
 		return nil
 	}
@@ -149,6 +156,7 @@ func resourceVsphereNicRead(d *schema.ResourceData, meta interface{}) error {
 		return nil
 	}
 
+	// get enabled services
 	var services []string
 	for _, netConfig := range hostVnicMgrInfo.NetConfig {
 		for _, vnic := range netConfig.SelectedVnic {
@@ -165,23 +173,86 @@ func resourceVsphereNicRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceVsphereNicCreate(d *schema.ResourceData, meta interface{}) error {
-	nicID, err := createVNic(d, meta)
+	log.Printf("[DEBUG] Entering vsphere vnic create function")
+
+	err := precheckEnableServices(d)
 	if err != nil {
 		return err
 	}
-	log.Printf("[DEBUG] Created NIC with ID: %s", nicID)
-	hostID := d.Get("host")
-	tfNicID := fmt.Sprintf("%s_%s", hostID, nicID)
+
+	nic, err := getNicSpecFromSchema(d)
+	if err != nil {
+		return err
+	}
+
+	client := meta.(*Client).vimClient
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return err
+	}
+
+	hns, err := getHostNetworkSystem(client, host)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
+
+	portgroup := d.Get("portgroup").(string)
+	nicID, err := hns.AddVirtualNic(ctx, portgroup, *nic)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("[INFO] Created NIC with ID: %s", nicID)
+
+	if err = updateVnicService(d, nicID, meta); err != nil {
+		return err
+	}
+
+	tfNicID := fmt.Sprintf("%s_%s", hr.Value, nicID)
 	d.SetId(tfNicID)
 	return resourceVsphereNicRead(d, meta)
 }
 
 func resourceVsphereNicUpdate(d *schema.ResourceData, meta interface{}) error {
+	log.Printf("[DEBUG] Entering vsphere vnic update function")
+
 	for _, k := range []string{
 		"portgroup", "distributed_switch_port", "distributed_port_group",
 		"mac", "mtu", "ipv4", "ipv6", "netstack", "services"} {
 		if d.HasChange(k) {
-			_, err := updateVNic(d, meta)
+			err := precheckEnableServices(d)
+			if err != nil {
+				return err
+			}
+
+			client := meta.(*Client).vimClient
+			tfID, nicID, _ := splitHostIDNicID(d)
+			ctx := context.TODO()
+
+			nic, err := getNicSpecFromSchema(d)
+			if err != nil {
+				return err
+			}
+
+			host, _, err := hostsystem.CheckIfHostnameOrID(client, tfID)
+			if err != nil {
+				return fmt.Errorf("error retrieving on vnic update: %s", err)
+			}
+
+			hns, err := getHostNetworkSystem(client, host)
+			if err != nil {
+				return err
+			}
+
+			err = hns.UpdateVirtualNic(ctx, nicID, *nic)
+			if err != nil {
+				return err
+			}
+
+			err = updateVnicService(d, nicID, meta)
 			if err != nil {
 				return err
 			}
@@ -192,23 +263,45 @@ func resourceVsphereNicUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceVsphereNicDelete(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client).vimClient
-	hostID, nicID := splitHostIDNicID(d)
+	log.Printf("[DEBUG] Entering vsphere vnic delete function")
 
-	err := removeVnic(client, hostID, nicID)
+	client := meta.(*Client).vimClient
+	_, nicID, _ := splitHostIDNicID(d)
+
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
 		return err
 	}
+
+	hns, err := getHostNetworkSystem(client, host)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
+
+	if err = hns.RemoveVirtualNic(ctx, nicID); err != nil {
+		return fmt.Errorf("error removing vnic '%s' from host '%s': %s", nicID, host.Name(), err)
+	}
+
 	return resourceVsphereNicRead(d, meta)
 }
 
-func resourceVSphereNicImport(d *schema.ResourceData, _ interface{}) ([]*schema.ResourceData, error) {
-	hostID, _ := splitHostIDNicID(d)
-
-	err := d.Set("host", hostID)
+func resourceVSphereNicImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	tfID, nicID, err := splitHostIDNicID(d)
 	if err != nil {
 		return []*schema.ResourceData{}, err
 	}
+
+	client := meta.(*Client).vimClient
+	_, hr, err := hostsystem.CheckIfHostnameOrID(client, tfID)
+	if err != nil {
+		return []*schema.ResourceData{}, fmt.Errorf("error retrieving on vnic import: %s", err)
+	}
+
+	d.SetId(fmt.Sprintf("%s_%s", tfID, nicID))
+	d.Set(hr.IDName, hr.Value)
 
 	return []*schema.ResourceData{d}, nil
 }
@@ -327,47 +420,14 @@ func BaseVMKernelSchema() map[string]*schema.Schema {
 	return sch
 }
 
-func updateVNic(d *schema.ResourceData, meta interface{}) (string, error) {
-	err := precheckEnableServices(d)
-	if err != nil {
-		return "", err
-	}
-
-	client := meta.(*Client).vimClient
-	hostID, nicID := splitHostIDNicID(d)
-	ctx := context.TODO()
-
-	nic, err := getNicSpecFromSchema(d)
-	if err != nil {
-		return "", err
-	}
-
-	hns, err := getHostNetworkSystem(client, hostID)
-	if err != nil {
-		return "", err
-	}
-
-	err = hns.UpdateVirtualNic(ctx, nicID, *nic)
-	if err != nil {
-		return "", err
-	}
-
-	err = updateVnicService(d, hostID, nicID, meta)
-	if err != nil {
-		return "", err
-	}
-
-	return nicID, nil
-}
-
-func updateVnicService(d *schema.ResourceData, hostID string, nicID string, meta interface{}) error {
+func updateVnicService(d *schema.ResourceData, nicID string, meta interface{}) error {
 	serviceOld, serviceNew := d.GetChange("services")
 	deleteList := serviceOld.(*schema.Set).List()
 	addList := serviceNew.(*schema.Set).List()
 
 	client := meta.(*Client).vimClient
 	ctx := context.TODO()
-	hostSystem, err := hostsystem.FromID(client, hostID)
+	hostSystem, _, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
 		return err
 	}
@@ -400,57 +460,10 @@ func precheckEnableServices(d *schema.ResourceData) error {
 	return nil
 }
 
-func createVNic(d *schema.ResourceData, meta interface{}) (string, error) {
-	err := precheckEnableServices(d)
-	if err != nil {
-		return "", err
-	}
+func getHostNetworkSystem(client *govmomi.Client, host *object.HostSystem) (*object.HostNetworkSystem, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
 
-	client := meta.(*Client).vimClient
-	ctx := context.TODO()
-
-	nic, err := getNicSpecFromSchema(d)
-	if err != nil {
-		return "", err
-	}
-
-	hostID := d.Get("host").(string)
-	hns, err := getHostNetworkSystem(client, hostID)
-	if err != nil {
-		return "", err
-	}
-
-	portgroup := d.Get("portgroup").(string)
-	nicID, err := hns.AddVirtualNic(ctx, portgroup, *nic)
-	if err != nil {
-		return "", err
-	}
-	d.SetId(fmt.Sprintf("%s_%s", hostID, nicID))
-
-	err = updateVnicService(d, hostID, nicID, meta)
-	if err != nil {
-		return "", err
-	}
-
-	return nicID, nil
-}
-
-func removeVnic(client *govmomi.Client, hostID, nicID string) error {
-	hns, err := getHostNetworkSystem(client, hostID)
-	if err != nil {
-		return err
-	}
-
-	return hns.RemoveVirtualNic(context.TODO(), nicID)
-}
-
-func getHostNetworkSystem(client *govmomi.Client, hostID string) (*object.HostNetworkSystem, error) {
-	ctx := context.TODO()
-
-	host, err := hostsystem.FromID(client, hostID)
-	if err != nil {
-		return nil, err
-	}
 	cmRef := host.ConfigManager().Reference()
 	cm := object.NewHostConfigManager(client.Client, cmRef)
 	hns, err := cm.NetworkSystem(ctx)
@@ -603,13 +616,10 @@ func getNicSpecFromSchema(d *schema.ResourceData) (*types.HostVirtualNicSpec, er
 	return vnic, nil
 }
 
-func getVnicFromHost(ctx context.Context, client *govmomi.Client, hostID, nicID string) (*types.HostVirtualNic, error) {
-	host, err := hostsystem.FromID(client, hostID)
-	if err != nil {
-		return nil, err
-	}
-
+func getVnicFromHost(ctx context.Context, client *govmomi.Client, host *object.HostSystem, nicID string) (*types.HostVirtualNic, error) {
 	var hostProps mo.HostSystem
+	var err error
+
 	err = host.Properties(ctx, host.Reference(), nil, &hostProps)
 	if err != nil {
 		log.Printf("[DEBUG] Failed to get the host's properties: %s", err)
@@ -631,7 +641,12 @@ func getVnicFromHost(ctx context.Context, client *govmomi.Client, hostID, nicID 
 	return &vNics[nicIdx], nil
 }
 
-func splitHostIDNicID(d *schema.ResourceData) (string, string) {
+func splitHostIDNicID(d *schema.ResourceData) (string, string, error) {
 	idParts := strings.Split(d.Id(), "_")
-	return idParts[0], idParts[1]
+
+	if len(idParts) == 1 {
+		return "", "", fmt.Errorf("invalid id format.  Format should be '<host_system_id | hostname>_<vnic_id>'")
+	}
+
+	return idParts[0], idParts[1], nil
 }

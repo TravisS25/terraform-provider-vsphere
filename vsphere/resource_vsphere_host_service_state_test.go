@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostservicestate"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/testhelper"
 	"github.com/vmware/govmomi/vim25/types"
@@ -56,8 +57,12 @@ func testAccResourceVSphereHostServiceStateDestroy(name string) resource.TestChe
 			return fmt.Errorf("%s key not found on the server", name)
 		}
 		client := testAccProvider.Meta().(*Client).vimClient
+		host, _, err := hostsystem.CheckIfHostnameOrID(client, rs.Primary.ID)
+		if err != nil {
+			return err
+		}
 
-		hsList, err := hostservicestate.GetHostServies(client, rs.Primary.ID, provider.DefaultAPITimeout)
+		hsList, err := hostservicestate.GetHostServies(client, host, provider.DefaultAPITimeout)
 		if err != nil {
 			return fmt.Errorf("error trying to get host services from host '%s'", err)
 		}
@@ -147,9 +152,14 @@ func testAccResourceVSphereHostServiceStateValidateServicesRunning(name string, 
 		if !ok {
 			return fmt.Errorf("%s key not found on the server", name)
 		}
-		client := testAccProvider.Meta().(*Client).vimClient
 
-		hsList, err := hostservicestate.GetHostServies(client, rs.Primary.ID, provider.DefaultAPITimeout)
+		client := testAccProvider.Meta().(*Client).vimClient
+		host, _, err := hostsystem.CheckIfHostnameOrID(client, rs.Primary.ID)
+		if err != nil {
+			return err
+		}
+
+		hsList, err := hostservicestate.GetHostServies(client, host, provider.DefaultAPITimeout)
 		if err != nil {
 			return fmt.Errorf("error trying to get host services from host '%s'", err)
 		}

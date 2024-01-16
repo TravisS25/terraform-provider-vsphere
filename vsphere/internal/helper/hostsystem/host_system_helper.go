@@ -33,7 +33,8 @@ type hostReturn struct {
 }
 
 var (
-	ErrHostnameNotFound = errors.New("could not find host with given hostname")
+	ErrHostnameNotFound     = errors.New("could not find host with given hostname")
+	ErrHostnameOrIDNotFound = errors.New("could not find host based off of id or hostname")
 )
 
 // SystemOrDefault returns a HostSystem from a specific host name and
@@ -165,21 +166,16 @@ func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.H
 		return nil, hostReturn{}, fmt.Errorf("no valid tf id attribute passed.  One of the following should be passed from resource: 'host_system_id', 'hostname'")
 	}
 
-	if err != nil {
-		return nil, hostReturn{}, fmt.Errorf("error while trying to retrieve host '%s': %s", tfVal, err)
-	}
-
-	return host, hostReturn{IDName: tfIDName, Value: tfVal}, nil
+	return host, hostReturn{IDName: tfIDName, Value: tfVal}, err
 }
 
 // CheckIfHostnameOrID is a helper function that allows users to pass in an id and determine if that id exists
 // based on either the vmware generated host id or hostname
 //
-// The bool that is returned indicates whether the "tfID" parameter passed was found by hostname
-// If "tfID" was found by hostname, will return true
-//
 // This is a "shim" function that is mainly used in import functions of any resource that relies on an esxi host id
 // or hostname as an attribute
+//
+// This will return "ErrHostnameOrIDNotFound" error type if a host can not be found by either host id or hostname
 func CheckIfHostnameOrID(client *govmomi.Client, tfID string) (*object.HostSystem, hostReturn, error) {
 	host, err := FromID(client, tfID)
 	if err != nil {
@@ -193,7 +189,7 @@ func CheckIfHostnameOrID(client *govmomi.Client, tfID string) (*object.HostSyste
 				return nil, hostReturn{}, err
 			}
 
-			return nil, hostReturn{}, fmt.Errorf("could not find host based off of id or hostname")
+			return nil, hostReturn{}, ErrHostnameOrIDNotFound
 		}
 
 		return host, hostReturn{IDName: "hostname", Value: host.Name()}, nil

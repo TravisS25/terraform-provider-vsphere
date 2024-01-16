@@ -5,6 +5,7 @@ package vsphere
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/license"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
@@ -33,7 +35,7 @@ func resourceVsphereHost() *schema.Resource {
 		Update: resourceVsphereHostUpdate,
 		Delete: resourceVsphereHostDelete,
 		Importer: &schema.ResourceImporter{
-			State: schema.ImportStatePassthrough,
+			State: resourceVSphereHostImport,
 		},
 		Schema: map[string]*schema.Schema{
 			"datacenter": {
@@ -57,6 +59,12 @@ func resourceVsphereHost() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 				Description: "FQDN or IP address of the host.",
+			},
+			"use_hostname_as_id": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     false,
+				Description: "Determines whether the hostname is set as the id",
 			},
 			"username": {
 				Type:        schema.TypeString,
@@ -185,7 +193,8 @@ func resourceVsphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 	taskResult := res.Result
 
-	var hostID string
+	var hostResourceID string
+	isHostnameID := d.Get("use_hostname_as_id").(bool)
 	taskResultType := taskResult.(types.ManagedObjectReference).Type
 	switch taskResultType {
 	case "ComputeResource":
@@ -194,19 +203,29 @@ func resourceVsphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		if err != nil {
 			return fmt.Errorf("failed to retrieve created computeResource Hosts. Error: %s", err)
 		}
-		hostID = crHosts[0].Reference().Value
-		log.Printf("[DEBUG] standalone hostID: %s", hostID)
+
+		if isHostnameID {
+			hostResourceID = d.Get("hostname").(string)
+		} else {
+			hostResourceID = crHosts[0].Reference().Value
+		}
+
+		log.Printf("[DEBUG] standalone hostResourceID: %s", hostResourceID)
 	case "HostSystem":
-		hostID = taskResult.(types.ManagedObjectReference).Value
+		if isHostnameID {
+			hostResourceID = d.Get("hostname").(string)
+		} else {
+			hostResourceID = taskResult.(types.ManagedObjectReference).Value
+		}
 	default:
 		return fmt.Errorf("unexpected task result type encountered. Got %s while waiting ComputeResourceType or Hostsystem", taskResultType)
 	}
-	log.Printf("[DEBUG] Host added with ID %s", hostID)
-	d.SetId(hostID)
+	log.Printf("[DEBUG] Host added with ID %s", hostResourceID)
+	d.SetId(hostResourceID)
 
-	host, err := hostsystem.FromID(client, hostID)
+	host, err := getHostSystemFromID(client, d, hostResourceID)
 	if err != nil {
-		return fmt.Errorf("failed while retrieving host object for host %s. Error: %s", hostID, err)
+		return fmt.Errorf("failed while retrieving host object for host %s. Error: %s", hostResourceID, err)
 	}
 
 	// Load the tags client to validate the vCenter Sever connection before
@@ -246,14 +265,14 @@ func resourceVsphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 	if connectedState {
 		hostProps, err := hostsystem.Properties(host)
 		if err != nil {
-			return fmt.Errorf("error while retrieving properties for host %s. Error: %s", hostID, err)
+			return fmt.Errorf("error while retrieving properties for host %s. Error: %s", hostResourceID, err)
 		}
 
 		hamRef := hostProps.ConfigManager.HostAccessManager.Reference()
 		ham := NewHostAccessManager(client.Client, hamRef)
 		err = ham.ChangeLockdownMode(context.TODO(), lockdownMode)
 		if err != nil {
-			return fmt.Errorf("error while changing lockdown mode for host %s. Error: %s", hostID, err)
+			return fmt.Errorf("error while changing lockdown mode for host %s. Error: %s", hostResourceID, err)
 		}
 	}
 
@@ -264,7 +283,7 @@ func resourceVsphereHostCreate(d *schema.ResourceData, meta interface{}) error {
 		err = hostsystem.ExitMaintenanceMode(host, provider.DefaultAPITimeout)
 	}
 	if err != nil {
-		return fmt.Errorf("error while toggling maintenance mode for host %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while toggling maintenance mode for host %s. Error: %s", hostResourceID, err)
 	}
 
 	return resourceVsphereHostRead(d, meta)
@@ -276,21 +295,21 @@ func resourceVsphereHostRead(d *schema.ResourceData, meta interface{}) error {
 
 	// Look for host
 	client := meta.(*Client).vimClient
-	hostID := d.Id()
+	hostResourceID := d.Id()
 
-	// Find host and get reference to it.
-	hs, err := hostsystem.FromID(client, hostID)
+	hs, err := getHostSystemFromID(client, d, hostResourceID)
 	if err != nil {
-		if viapi.IsManagedObjectNotFoundError(err) {
+		if errors.Is(err, hostsystem.ErrHostnameNotFound) || viapi.IsManagedObjectNotFoundError(err) {
 			d.SetId("")
 			return nil
 		}
-		return fmt.Errorf("error while searching host %s. Error: %s ", hostID, err)
+
+		return fmt.Errorf("error while searching host %s. Error: %s ", hostResourceID, err)
 	}
 
 	maintenanceState, err := hostsystem.HostInMaintenance(hs)
 	if err != nil {
-		return fmt.Errorf("error while checking maintenance status for host %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while checking maintenance status for host %s. Error: %s", hostResourceID, err)
 	}
 	_ = d.Set("maintenance", maintenanceState)
 
@@ -298,7 +317,7 @@ func resourceVsphereHostRead(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[DEBUG] Got host %s", hs.String())
 	host, err := hostsystem.Properties(hs)
 	if err != nil {
-		return fmt.Errorf("error while retrieving properties for host %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while retrieving properties for host %s. Error: %s", hostResourceID, err)
 	}
 
 	if host.Parent != nil && host.Parent.Type == "ClusterComputeResource" && !d.Get("cluster_managed").(bool) {
@@ -309,7 +328,7 @@ func resourceVsphereHostRead(d *schema.ResourceData, meta interface{}) error {
 
 	connectionState, err := hostsystem.GetConnectionState(hs)
 	if err != nil {
-		return fmt.Errorf("error while getting connection state for host %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while getting connection state for host %s. Error: %s", hostResourceID, err)
 	}
 
 	if connectionState == types.HostSystemConnectionStateDisconnected {
@@ -330,9 +349,9 @@ func resourceVsphereHostRead(d *schema.ResourceData, meta interface{}) error {
 
 	licenseKey := d.Get("license").(string)
 	if licenseKey != "" {
-		licFound, err := isLicenseAssigned(client.Client, hostID, licenseKey)
+		licFound, err := isLicenseAssigned(client.Client, hs.Reference().Value, licenseKey)
 		if err != nil {
-			return fmt.Errorf("error while checking license assignment for host %s. Error: %s", hostID, err)
+			return fmt.Errorf("error while checking license assignment for host %s. Error: %s", hostResourceID, err)
 		}
 
 		if !licFound {
@@ -386,15 +405,15 @@ func resourceVsphereHostUpdate(d *schema.ResourceData, meta interface{}) error {
 		desiredConnectionState = d.Get("connected").(bool)
 	}
 
-	hostID := d.Id()
-	hostObject, err := hostsystem.FromID(client, hostID)
+	hostResourceID := d.Id()
+	hs, err := getHostSystemFromID(client, d, hostResourceID)
 	if err != nil {
-		return fmt.Errorf("error while retrieving HostSystem object for host ID %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while retrieving HostSystem object for host ID %s. Error: %s", hostResourceID, err)
 	}
 
-	actualConnectionState, err := hostsystem.GetConnectionState(hostObject)
+	actualConnectionState, err := hostsystem.GetConnectionState(hs)
 	if err != nil {
-		return fmt.Errorf("error while retrieving connection state for host %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while retrieving connection state for host %s. Error: %s", hostResourceID, err)
 	}
 
 	// Have there been any changes that warrant a reconnect?
@@ -417,12 +436,12 @@ func resourceVsphereHostUpdate(d *schema.ResourceData, meta interface{}) error {
 	case 1:
 		err := resourceVSphereHostReconnect(d, meta)
 		if err != nil {
-			return fmt.Errorf("error while reconnecting host %s. Error: %s", hostID, err)
+			return fmt.Errorf("error while reconnecting host %s. Error: %s", hostResourceID, err)
 		}
 	case -1:
 		err := resourceVSphereHostDisconnect(d, meta)
 		if err != nil {
-			return fmt.Errorf("error while disconnecting host %s. Error: %s", hostID, err)
+			return fmt.Errorf("error while disconnecting host %s. Error: %s", hostResourceID, err)
 		}
 	case 0:
 		break
@@ -450,14 +469,14 @@ func resourceVsphereHostUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	// Apply tags
 	if tagsClient != nil {
-		if err := processTagDiff(tagsClient, d, hostObject); err != nil {
+		if err := processTagDiff(tagsClient, d, hs); err != nil {
 			return fmt.Errorf("error updating tags: %s", err)
 		}
 	}
 
 	// Apply custom attributes
 	if attrsProcessor != nil {
-		if err := attrsProcessor.ProcessDiff(hostObject); err != nil {
+		if err := attrsProcessor.ProcessDiff(hs); err != nil {
 			return err
 		}
 	}
@@ -467,16 +486,16 @@ func resourceVsphereHostUpdate(d *schema.ResourceData, meta interface{}) error {
 
 func resourceVsphereHostDelete(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Id()
+	hostResourceID := d.Id()
 
-	hs, err := hostsystem.FromID(client, hostID)
+	hs, err := getHostSystemFromID(client, d, hostResourceID)
 	if err != nil {
-		return fmt.Errorf("error while retrieving HostSystem object for host ID %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while retrieving HostSystem object for host ID %s. Error: %s", hostResourceID, err)
 	}
 
 	connectionState, err := hostsystem.GetConnectionState(hs)
 	if err != nil {
-		return fmt.Errorf("error while retrieving connection state for host %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while retrieving connection state for host %s. Error: %s", hostResourceID, err)
 	}
 
 	if connectionState != types.HostSystemConnectionStateDisconnected {
@@ -489,7 +508,7 @@ func resourceVsphereHostDelete(d *schema.ResourceData, meta interface{}) error {
 
 	hostProps, err := hostsystem.Properties(hs)
 	if err != nil {
-		return fmt.Errorf("error while retrieving properties fort host %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while retrieving properties fort host %s. Error: %s", hostResourceID, err)
 	}
 
 	// If this is a standalone host we need to destroy the ComputeResource object
@@ -510,18 +529,52 @@ func resourceVsphereHostDelete(d *schema.ResourceData, meta interface{}) error {
 	p := property.DefaultCollector(client.Client)
 	_, err = gtask.Wait(context.TODO(), task.Reference(), p, nil)
 	if err != nil {
-		return fmt.Errorf("error while waiting for host (%s) to be removed: %s", hostID, err)
+		return fmt.Errorf("error while waiting for host (%s) to be removed: %s", hostResourceID, err)
 	}
 	return nil
 }
 
+func resourceVSphereHostImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	log.Printf("[DEBUG] entering resource host import function")
+
+	client := meta.(*Client).vimClient
+	host, hr, err := hostsystem.CheckIfHostnameOrID(client, d.Id())
+	if err != nil {
+		return nil, err
+	}
+
+	moHost, err := hostsystem.Properties(host)
+	if err != nil {
+		return nil, fmt.Errorf("error while retrieving properties for host '%s': %s", host.Name(), err)
+	}
+
+	if moHost.Parent.Type == "ClusterComputeResource" {
+		d.Set("cluster_managed", true)
+	} else {
+		d.Set("cluster_managed", false)
+	}
+
+	if hr.IDName == "hostname" {
+		d.Set("use_hostname_as_id", true)
+	} else {
+		d.Set("use_hostname_as_id", false)
+	}
+
+	d.SetId(hr.Value)
+	d.Set("license", "")
+
+	return []*schema.ResourceData{d}, nil
+}
+
 func resourceVSphereHostUpdateLockdownMode(d *schema.ResourceData, meta, _, newVal interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Id()
-	host, err := hostsystem.FromID(client, hostID)
+	hostResourceID := d.Id()
+
+	host, err := getHostSystemFromID(client, d, hostResourceID)
 	if err != nil {
-		return fmt.Errorf("error while retrieving HostSystem object for host ID %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while retrieving HostSystem object for host ID %s. Error: %s", hostResourceID, err)
 	}
+
 	lockdownModeString := newVal.(string)
 	lockdownMode, err := hostLockdownType(lockdownModeString)
 	if err != nil {
@@ -531,14 +584,14 @@ func resourceVSphereHostUpdateLockdownMode(d *schema.ResourceData, meta, _, newV
 	var hostProps mo.HostSystem
 	err = host.Properties(context.TODO(), host.ConfigManager().Reference(), []string{"configManager.hostAccessManager"}, &hostProps)
 	if err != nil {
-		return fmt.Errorf("error while retrieving HostSystem properties for host ID %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while retrieving HostSystem properties for host ID %s. Error: %s", hostResourceID, err)
 	}
 
 	hamRef := hostProps.ConfigManager.HostAccessManager.Reference()
 	ham := NewHostAccessManager(client.Client, hamRef)
 	err = ham.ChangeLockdownMode(context.TODO(), lockdownMode)
 	if err != nil {
-		return fmt.Errorf("error while changing lonckdown mode for host ID %s to %s. Error: %s", hostID, lockdownMode, err)
+		return fmt.Errorf("error while changing lonckdown mode for host ID %s to %s. Error: %s", hostResourceID, lockdownMode, err)
 	}
 
 	return nil
@@ -546,11 +599,11 @@ func resourceVSphereHostUpdateLockdownMode(d *schema.ResourceData, meta, _, newV
 
 func resourceVSphereHostUpdateMaintenanceMode(d *schema.ResourceData, meta, _, newVal interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Id()
+	hostResourceID := d.Id()
 
-	host, err := hostsystem.FromID(client, hostID)
+	host, err := getHostSystemFromID(client, d, hostResourceID)
 	if err != nil {
-		return fmt.Errorf("error while retrieving HostSystem object for host ID %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while retrieving HostSystem object for host ID %s. Error: %s", hostResourceID, err)
 	}
 
 	maintenanceMode := newVal.(bool)
@@ -572,7 +625,13 @@ func resourceVSphereHostUpdateLicense(d *schema.ResourceData, meta, _, newVal in
 	if err != nil {
 		return fmt.Errorf("error while accessing License Assignment Manager endpoint. Error: %s", err)
 	}
-	_, err = lam.Update(context.TODO(), d.Id(), newVal.(string), "")
+
+	host, _, err := hostsystem.CheckIfHostnameOrID(client, d.Id())
+	if err != nil {
+		return err
+	}
+
+	_, err = lam.Update(context.TODO(), host.Reference().Value, newVal.(string), "")
 	if err != nil {
 		return fmt.Errorf("error while updating license. error: %s", err)
 	}
@@ -581,7 +640,7 @@ func resourceVSphereHostUpdateLicense(d *schema.ResourceData, meta, _, newVal in
 
 func resourceVSphereHostUpdateCluster(d *schema.ResourceData, meta, _, newVal interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Id()
+	hostResourceID := d.Id()
 	newClusterID := newVal.(string)
 
 	newCluster, err := clustercomputeresource.FromID(client, newClusterID)
@@ -589,9 +648,9 @@ func resourceVSphereHostUpdateCluster(d *schema.ResourceData, meta, _, newVal in
 		return fmt.Errorf("error while searching newVal cluster %s. Error: %s", newClusterID, err)
 	}
 
-	hs, err := hostsystem.FromID(client, hostID)
+	hs, err := getHostSystemFromID(client, d, hostResourceID)
 	if err != nil {
-		return fmt.Errorf("error while retrieving HostSystem object for host ID %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while retrieving HostSystem object for host ID %s. Error: %s", hostResourceID, err)
 	}
 
 	err = hostsystem.EnterMaintenanceMode(hs, provider.DefaultAPITimeout, true)
@@ -601,7 +660,7 @@ func resourceVSphereHostUpdateCluster(d *schema.ResourceData, meta, _, newVal in
 
 	task, err := newCluster.MoveInto(context.TODO(), hs)
 	if err != nil {
-		return fmt.Errorf("error while moving HostSystem with ID %s to new cluster. Error: %s", hostID, err)
+		return fmt.Errorf("error while moving HostSystem with ID %s to new cluster. Error: %s", hostResourceID, err)
 	}
 	p := property.DefaultCollector(client.Client)
 	_, err = gtask.Wait(context.TODO(), task.Reference(), p, nil)
@@ -622,20 +681,21 @@ func resourceVSphereHostUpdateThumbprint(d *schema.ResourceData, meta, _, _ inte
 }
 
 func resourceVSphereHostReconnect(d *schema.ResourceData, meta interface{}) error {
-	hostID := d.Id()
+	hostResourceID := d.Id()
 	client := meta.(*Client).vimClient
-	host := object.NewHostSystem(client.Client, types.ManagedObjectReference{Type: "HostSystem", Value: d.Id()})
+
+	host, _ := getHostSystemFromID(client, d, hostResourceID)
 	hcs := buildHostConnectSpec(d)
 
 	task, err := host.Reconnect(context.TODO(), &hcs, nil)
 	if err != nil {
-		return fmt.Errorf("error while reconnecting host with ID %s. Error: %s", hostID, err)
+		return fmt.Errorf("error while reconnecting host with ID %s. Error: %s", hostResourceID, err)
 	}
 
 	p := property.DefaultCollector(client.Client)
 	_, err = gtask.Wait(context.TODO(), task.Reference(), p, nil)
 	if err != nil {
-		return fmt.Errorf("error while reconnecting host(%s): %s", hostID, err)
+		return fmt.Errorf("error while reconnecting host(%s): %s", hostResourceID, err)
 	}
 
 	maintenanceState, err := hostsystem.HostInMaintenance(host)
@@ -654,9 +714,10 @@ func resourceVSphereHostReconnect(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceVSphereHostDisconnect(d *schema.ResourceData, meta interface{}) error {
-	hostID := d.Id()
+	hostResourceID := d.Id()
 	client := meta.(*Client).vimClient
-	host := object.NewHostSystem(client.Client, types.ManagedObjectReference{Type: "HostSystem", Value: d.Id()})
+
+	host, _ := getHostSystemFromID(client, d, hostResourceID)
 	task, err := host.Disconnect(context.TODO())
 	if err != nil {
 		return fmt.Errorf("error while disconnecting host %s. Error: %s", host.Name(), err)
@@ -665,7 +726,7 @@ func resourceVSphereHostDisconnect(d *schema.ResourceData, meta interface{}) err
 	p := property.DefaultCollector(client.Client)
 	_, err = gtask.Wait(context.TODO(), task.Reference(), p, nil)
 	if err != nil {
-		return fmt.Errorf("error while disconnecting host(%s): %s", hostID, err)
+		return fmt.Errorf("error while disconnecting host(%s): %s", hostResourceID, err)
 	}
 	return nil
 }
@@ -748,7 +809,7 @@ func buildHostConnectSpec(d *schema.ResourceData) types.HostConnectSpec {
 	return hcs
 }
 
-func isLicenseAssigned(client *vim25.Client, hostID, licenseKey string) (bool, error) {
+func isLicenseAssigned(client *vim25.Client, hostResourceID, licenseKey string) (bool, error) {
 	ctx := context.TODO()
 	lm := license.NewManager(client)
 	am, err := lm.AssignmentManager(ctx)
@@ -756,7 +817,7 @@ func isLicenseAssigned(client *vim25.Client, hostID, licenseKey string) (bool, e
 		return false, err
 	}
 
-	licenses, err := am.QueryAssigned(ctx, hostID)
+	licenses, err := am.QueryAssigned(ctx, hostResourceID)
 	if err != nil {
 		return false, err
 	}
@@ -787,6 +848,14 @@ func licenseExists(client *vim25.Client, licenseKey string) (bool, error) {
 		}
 	}
 	return licFound, nil
+}
+
+func getHostSystemFromID(client *govmomi.Client, d *schema.ResourceData, resourceID string) (*object.HostSystem, error) {
+	if d.Get("use_hostname_as_id").(bool) {
+		return hostsystem.FromHostname(client, resourceID)
+	}
+
+	return hostsystem.FromID(client, resourceID)
 }
 
 // Make sure input makes sense

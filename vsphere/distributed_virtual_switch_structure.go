@@ -4,13 +4,17 @@
 package vsphere
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -86,10 +90,14 @@ func schemaVMwareDVSConfigSpec() map[string]*schema.Schema {
 						Elem:        &schema.Schema{Type: schema.TypeString},
 					},
 					"host_system_id": {
-						Type:         schema.TypeString,
-						Required:     true,
-						Description:  "The managed object ID of the host this specification applies to.",
-						ValidateFunc: validation.NoZeroValues,
+						Type:        schema.TypeString,
+						Optional:    true,
+						Description: "The managed object ID of the host this specification applies to.",
+					},
+					"hostname": {
+						Type:        schema.TypeString,
+						Optional:    true,
+						Description: "The hostname of the host this specification applies to.",
 					},
 				},
 			},
@@ -275,10 +283,23 @@ func flattenDVSContactInfo(d *schema.ResourceData, obj types.DVSContactInfo) err
 
 // expandDistributedVirtualSwitchHostMemberConfigSpec reads certain keys from a
 // Set object map and returns a DistributedVirtualSwitchHostMemberConfigSpec.
-func expandDistributedVirtualSwitchHostMemberConfigSpec(d map[string]interface{}) types.DistributedVirtualSwitchHostMemberConfigSpec {
-	hostRef := &types.ManagedObjectReference{
+func expandDistributedVirtualSwitchHostMemberConfigSpec(d map[string]interface{}, client *govmomi.Client, useHostID bool) (types.DistributedVirtualSwitchHostMemberConfigSpec, error) {
+	var hsID string
+
+	if useHostID {
+		hsID = d["host_system_id"].(string)
+	} else {
+		hs, _, err := hostsystem.CheckIfHostnameOrID(client, d["hostname"].(string))
+		if err != nil {
+			return types.DistributedVirtualSwitchHostMemberConfigSpec{}, fmt.Errorf("error retrieving host trying to expand distributed switch host members: %s", err)
+		}
+
+		hsID = hs.Reference().Value
+	}
+
+	hostRef := types.ManagedObjectReference{
 		Type:  "HostSystem",
-		Value: d["host_system_id"].(string),
+		Value: hsID,
 	}
 
 	var pnSpecs []types.DistributedVirtualSwitchHostMemberPnicSpec
@@ -294,21 +315,36 @@ func expandDistributedVirtualSwitchHostMemberConfigSpec(d map[string]interface{}
 	}
 
 	obj := types.DistributedVirtualSwitchHostMemberConfigSpec{
-		Host:    *hostRef,
+		Host:    hostRef,
 		Backing: &backing,
 	}
-	return obj
+	return obj, nil
 }
 
-// flattenDistributedVirtualSwitchHostMemberConfigSpec reads various fields
+// flattenDistributedVirtualSwitchHostMember reads various fields
 // from a DistributedVirtualSwitchHostMemberConfigSpec and returns a Set object
 // map.
 //
 // This is the flatten counterpart to
 // expandDistributedVirtualSwitchHostMemberConfigSpec.
-func flattenDistributedVirtualSwitchHostMember(obj types.DistributedVirtualSwitchHostMember) map[string]interface{} {
-	d := make(map[string]interface{})
-	d["host_system_id"] = obj.Config.Host.Value
+func flattenDistributedVirtualSwitchHostMember(
+	d *schema.ResourceData,
+	client *govmomi.Client,
+	obj types.DistributedVirtualSwitchHostMember,
+	useHostID bool,
+) (map[string]interface{}, error) {
+	dMap := make(map[string]interface{})
+
+	if useHostID {
+		dMap["host_system_id"] = obj.Config.Host.Value
+	} else {
+		host, _, err := hostsystem.CheckIfHostnameOrID(client, obj.Config.Host.Value)
+		if err != nil {
+			return nil, fmt.Errorf("error retrieving host trying to flatten distributed switch host members: %s", err)
+		}
+
+		dMap["hostname"] = host.Name()
+	}
 
 	var devices []string
 	backing := obj.Config.Backing.(*types.DistributedVirtualSwitchHostMemberPnicBacking)
@@ -316,15 +352,15 @@ func flattenDistributedVirtualSwitchHostMember(obj types.DistributedVirtualSwitc
 		devices = append(devices, spec.PnicDevice)
 	}
 
-	d["devices"] = devices
+	dMap["devices"] = devices
 
-	return d
+	return dMap, nil
 }
 
 // expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec expands all host
 // entires for a VMware DVS, detecting if a host spec needs to be added,
 // removed, or updated as well. The whole slice is returned.
-func expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec(d *schema.ResourceData) []types.DistributedVirtualSwitchHostMemberConfigSpec {
+func expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec(d *schema.ResourceData, client *govmomi.Client) ([]types.DistributedVirtualSwitchHostMemberConfigSpec, error) {
 	var specs []types.DistributedVirtualSwitchHostMemberConfigSpec
 	o, n := d.GetChange("host")
 	os := o.(*schema.Set)
@@ -336,6 +372,22 @@ func expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec(d *schema.Resourc
 	os = os.Difference(is)
 	ns = ns.Difference(is)
 
+	var useHostID bool
+
+	if len(ns.List()) > 0 {
+		host := ns.List()[0].(map[string]interface{})
+
+		if host["host_system_id"].(string) != "" {
+			useHostID = true
+		}
+	} else if len(os.List()) > 0 {
+		host := os.List()[0].(map[string]interface{})
+
+		if host["host_system_id"].(string) != "" {
+			useHostID = true
+		}
+	}
+
 	// Our old and new sets now have an accurate description of hosts that may
 	// have been added, removed, or changed. Add removed and modified hosts
 	// first.
@@ -344,14 +396,41 @@ func expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec(d *schema.Resourc
 		var found bool
 		for _, ne := range ns.List() {
 			nm := ne.(map[string]interface{})
-			if nm["host_system_id"] == om["host_system_id"] {
-				found = true
+
+			if useHostID {
+				if nm["host_system_id"] == om["host_system_id"] {
+					found = true
+				}
+			} else {
+				if nm["hostname"] == om["hostname"] {
+					found = true
+				}
 			}
 		}
-		if !found {
-			spec := expandDistributedVirtualSwitchHostMemberConfigSpec(om)
-			spec.Operation = string(types.ConfigSpecOperationRemove)
-			specs = append(specs, spec)
+
+		tfID := ""
+
+		if useHostID && om["host_system_id"] != "" {
+			tfID = om["host_system_id"].(string)
+		} else if om["hostname"] != "" {
+			tfID = om["hostname"].(string)
+		}
+
+		if !found && tfID != "" {
+			_, _, err := hostsystem.CheckIfHostnameOrID(client, tfID)
+			if err != nil {
+				if !errors.Is(err, hostsystem.ErrHostnameOrIDNotFound) {
+					return nil, fmt.Errorf("error retrieving host for host member spec: %s", err)
+				}
+			} else {
+				spec, err := expandDistributedVirtualSwitchHostMemberConfigSpec(om, client, useHostID)
+				if err != nil {
+					return nil, fmt.Errorf("error retrieving host members for distributed switch on old list: %s", err)
+				}
+
+				spec.Operation = string(types.ConfigSpecOperationRemove)
+				specs = append(specs, spec)
+			}
 		}
 	}
 
@@ -362,11 +441,18 @@ func expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec(d *schema.Resourc
 		var found bool
 		for _, oe := range os.List() {
 			om := oe.(map[string]interface{})
-			if om["host_system_id"] == nm["host_system_id"] {
+
+			if useHostID && om["host_system_id"] == nm["host_system_id"] {
+				found = true
+			} else if om["hostname"] == nm["hostname"] {
 				found = true
 			}
 		}
-		spec := expandDistributedVirtualSwitchHostMemberConfigSpec(nm)
+		spec, err := expandDistributedVirtualSwitchHostMemberConfigSpec(nm, client, useHostID)
+		if err != nil {
+			return nil, fmt.Errorf("error retrieving host members for distributed switch on new list: %s", err)
+		}
+
 		if !found {
 			spec.Operation = string(types.ConfigSpecOperationAdd)
 		} else {
@@ -376,7 +462,7 @@ func expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec(d *schema.Resourc
 	}
 
 	// Done!
-	return specs
+	return specs, nil
 }
 
 // flattenSliceOfDistributedVirtualSwitchHostMember creates a set of all host
@@ -384,10 +470,27 @@ func expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec(d *schema.Resourc
 //
 // This is the flatten counterpart to
 // expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec.
-func flattenSliceOfDistributedVirtualSwitchHostMember(d *schema.ResourceData, members []types.DistributedVirtualSwitchHostMember) error {
+func flattenSliceOfDistributedVirtualSwitchHostMember(d *schema.ResourceData, client *govmomi.Client, members []types.DistributedVirtualSwitchHostMember) error {
 	var hosts []map[string]interface{}
+	var useHostID bool
+
+	hostList := d.Get("host").(*schema.Set).List()
+
+	if len(hostList) > 0 {
+		host := hostList[0].(map[string]interface{})
+
+		if host["host_system_id"].(string) != "" {
+			useHostID = true
+		}
+	}
+
 	for _, m := range members {
-		hosts = append(hosts, flattenDistributedVirtualSwitchHostMember(m))
+		host, err := flattenDistributedVirtualSwitchHostMember(d, client, m, useHostID)
+		if err != nil {
+			return fmt.Errorf("error trying to flatten hosts for distributed switch: %s", err)
+		}
+
+		hosts = append(hosts, host)
 	}
 	return d.Set("host", hosts)
 }
@@ -677,13 +780,36 @@ func flattenDVSNameArrayUplinkPortPolicy(d *schema.ResourceData, obj *types.DVSN
 
 // expandVMwareDVSConfigSpec reads certain ResourceData keys and
 // returns a VMwareDVSConfigSpec.
-func expandVMwareDVSConfigSpec(d *schema.ResourceData) *types.VMwareDVSConfigSpec {
-	obj := &types.VMwareDVSConfigSpec{
+func expandVMwareDVSConfigSpec(d *schema.ResourceData, client *govmomi.Client, dvs *object.VmwareDistributedVirtualSwitch) (*types.VMwareDVSConfigSpec, error) {
+	hosts, err := expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec(d, client)
+	if err != nil {
+		return nil, err
+	}
+
+	var configVersion string
+
+	// This is here as an override to get the latest config version of the distributed switch once it is created
+	// The reason for doing this instead of relying on the stored "config_version" attribute is that if an esxi
+	// host is completely removed from state and terraform apply is ran, the dvs's config version gets updated in
+	// the process before hitting the dvs's resource update function so the "config_version" stored locally is behind
+	// what the actual config version which causes an error when making the update request
+	if dvs != nil {
+		moDVS, err := dvsProperties(dvs)
+		if err != nil {
+			return nil, fmt.Errorf("error retrieving properties for dvs while expanding dvs config spec")
+		}
+
+		configVersion = moDVS.Config.GetDVSConfigInfo().ConfigVersion
+	} else {
+		configVersion = d.Get("config_version").(string)
+	}
+
+	return &types.VMwareDVSConfigSpec{
 		DVSConfigSpec: types.DVSConfigSpec{
 			Name:                                d.Get("name").(string),
-			ConfigVersion:                       d.Get("config_version").(string),
+			ConfigVersion:                       configVersion,
 			DefaultPortConfig:                   expandVMwareDVSPortSetting(d, "distributed_virtual_switch"),
-			Host:                                expandSliceOfDistributedVirtualSwitchHostMemberConfigSpec(d),
+			Host:                                hosts,
 			Description:                         d.Get("description").(string),
 			Contact:                             expandDVSContactInfo(d),
 			SwitchIpAddress:                     d.Get("ipv4_address").(string),
@@ -697,8 +823,7 @@ func expandVMwareDVSConfigSpec(d *schema.ResourceData) *types.VMwareDVSConfigSpe
 		IpfixConfig:                 expandVMwareIpfixConfig(d),
 		LacpApiVersion:              d.Get("lacp_api_version").(string),
 		MulticastFilteringMode:      d.Get("multicast_filtering_mode").(string),
-	}
-	return obj
+	}, nil
 }
 
 // flattenVMwareDVSConfigInfo reads various fields from a
@@ -707,7 +832,7 @@ func expandVMwareDVSConfigSpec(d *schema.ResourceData) *types.VMwareDVSConfigSpe
 // This is the flatten counterpart to expandVMwareDVSConfigSpec, as the
 // configuration info from a DVS comes back as this type instead of a specific
 // ConfigSpec.
-func flattenVMwareDVSConfigInfo(d *schema.ResourceData, obj *types.VMwareDVSConfigInfo) error {
+func flattenVMwareDVSConfigInfo(d *schema.ResourceData, client *govmomi.Client, obj *types.VMwareDVSConfigInfo) error {
 	_ = d.Set("name", obj.Name)
 	_ = d.Set("config_version", obj.ConfigVersion)
 	_ = d.Set("description", obj.Description)
@@ -730,7 +855,7 @@ func flattenVMwareDVSConfigInfo(d *schema.ResourceData, obj *types.VMwareDVSConf
 	if err := flattenVMwareDVSPortSetting(d, obj.DefaultPortConfig.(*types.VMwareDVSPortSetting)); err != nil {
 		return err
 	}
-	if err := flattenSliceOfDistributedVirtualSwitchHostMember(d, obj.Host); err != nil {
+	if err := flattenSliceOfDistributedVirtualSwitchHostMember(d, client, obj.Host); err != nil {
 		return err
 	}
 	if err := flattenSliceOfVMwareDVSPvlanMapEntry(d, obj.PvlanConfig); err != nil {
@@ -768,14 +893,19 @@ func schemaDVSCreateSpec() map[string]*schema.Schema {
 
 // expandDVSCreateSpec reads certain ResourceData keys and
 // returns a DVSCreateSpec.
-func expandDVSCreateSpec(d *schema.ResourceData) types.DVSCreateSpec {
+func expandDVSCreateSpec(d *schema.ResourceData, client *govmomi.Client) (types.DVSCreateSpec, error) {
+	spec, err := expandVMwareDVSConfigSpec(d, client, nil)
+	if err != nil {
+		return types.DVSCreateSpec{}, err
+	}
+
 	// Since we are only working with the version string from the product spec,
 	// we don't have a separate expander/flattener for it. Just do that here.
 	obj := types.DVSCreateSpec{
 		ProductInfo: &types.DistributedVirtualSwitchProductSpec{
 			Version: d.Get("version").(string),
 		},
-		ConfigSpec: expandVMwareDVSConfigSpec(d),
+		ConfigSpec: spec,
 	}
-	return obj
+	return obj, nil
 }

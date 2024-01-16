@@ -37,7 +37,7 @@ resource "vsphere_host" "esx-01" {
 }
 ```
 
-**Create host in a compute cluster:**
+**Create host in a compute cluster with hostname as id:**
 
 ```hcl
 data "vsphere_datacenter" "datacenter" {
@@ -57,6 +57,7 @@ data "vsphere_host_thumbprint" "thumbprint" {
 resource "vsphere_host" "esx-01" {
   hostname = "esx-01.example.com"
   username = "root"
+  use_hostname_as_id = true
   password = "password"
   license  = "00000-00000-00000-00000-00000"
   thumbprint = data.vsphere_host_thumbprint.thumbprint.id
@@ -69,6 +70,9 @@ resource "vsphere_host" "esx-01" {
 The following arguments are supported:
 
 * `hostname` - (Required) FQDN or IP address of the host to be added.
+* `use_hostname_as_id` - (Optional) Determines whether the hostname is set as the id vs using the
+the vmware generated id.  The reason for having this flag is that when an esxi host is removed from inventory
+and added back to vsphere a new vmware id is generated which causes tf state to break.  If we set the id as the hostname, a host can be removed and added without effecting tf state (as long as the esxi hostname doesn't change)
 * `username` - (Required) Username that will be used by vSphere to authenticate
   to the host.
 * `password` - (Required) Password that will be used by vSphere to authenticate
@@ -129,3 +133,11 @@ terraform import vsphere_host.esx-01 host-123
 ```
 
 The above would import the host with ID `host-123`.
+
+We can also import by hostname if `use_hostname_as_id` is set
+
+```
+terraform import vsphere_host.esx-01 host.example.com
+```
+
+The above would import the host with hostname `host.example.com`.
