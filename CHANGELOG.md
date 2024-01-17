@@ -1,4 +1,9 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 2.10.0 (January 11, 2024)
+
+FEATURES:
+* `resource/host_config_syslog` : Enables ability to update syslog settings for esxi host
+
 ## 2.9.1 (January 9, 2024)
 
 CHORES:
