@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostservicestate"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -29,8 +30,15 @@ func resourceVsphereHostServiceState() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"host_system_id": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ForceNew:     true,
+				Description:  "Host id of machine that will update service",
+				ExactlyOneOf: []string{"hostname"},
+			},
+			"hostname": {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 				ForceNew:    true,
 				Description: "Host id of machine that will update service",
 			},
@@ -71,7 +79,10 @@ func resourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interface{
 	log.Printf("[DEBUG] entering resource_vsphere_host_service_state read function")
 
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return err
+	}
 	srvs := d.Get("service").([]interface{})
 	updatedList := make([]interface{}, 0, len(srvs))
 
@@ -79,14 +90,14 @@ func resourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interface{
 		srv := v.(map[string]interface{})
 		ss, err := hostservicestate.GetServiceState(
 			client,
-			hostID,
+			host,
 			hostservicestate.HostServiceKey(srv["key"].(string)),
 			provider.DefaultAPITimeout,
 		)
 		if err != nil {
 			return fmt.Errorf(
 				"error trying to retrieve service state for host '%s' with key %s: %s",
-				hostID,
+				host.Name(),
 				srv["key"].(string),
 				err,
 			)
@@ -95,7 +106,6 @@ func resourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interface{
 		updatedList = append(updatedList, ss)
 	}
 
-	d.Set("host_system_id", hostID)
 	d.Set("service", updatedList)
 
 	return nil
@@ -105,30 +115,34 @@ func resourceVSphereHostServiceStateCreate(d *schema.ResourceData, meta interfac
 	log.Printf("[DEBUG] entering resource_vsphere_host_service_state create function")
 
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return err
+	}
+
 	srvs := d.Get("service").([]interface{})
 
-	log.Printf("[INFO] creating host services for host '%s'", hostID)
+	log.Printf("[INFO] creating host services for host '%s'", host.Name())
 
 	for _, v := range srvs {
 		srv := v.(map[string]interface{})
 
 		if err := hostservicestate.SetServiceState(
 			client,
-			hostID,
+			host,
 			srv,
 			provider.DefaultAPITimeout,
 			true,
 		); err != nil {
 			return fmt.Errorf(
 				"error trying to create service '%s' for host '%s': %s", srv["key"],
-				hostID,
+				host,
 				err,
 			)
 		}
 	}
 
-	d.SetId(hostID)
+	d.SetId(hr.Value)
 
 	return nil
 }
@@ -137,10 +151,12 @@ func resourceVSphereHostServiceStateUpdate(d *schema.ResourceData, meta interfac
 	log.Printf("[DEBUG] entering resource_vsphere_host_service_state update function")
 
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-	log.Printf("[INFO] updating host services for host '%s'", hostID)
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return err
+	}
 
-	var err error
+	log.Printf("[INFO] updating host services for host '%s'", host.Name())
 
 	oldVal, newVal := d.GetChange("service")
 	oldList := oldVal.([]interface{})
@@ -165,7 +181,7 @@ func resourceVSphereHostServiceStateUpdate(d *schema.ResourceData, meta interfac
 		if !found {
 			if err = hostservicestate.SetServiceState(
 				client,
-				hostID,
+				host,
 				oldSrv,
 				provider.DefaultAPITimeout,
 				false,
@@ -173,7 +189,7 @@ func resourceVSphereHostServiceStateUpdate(d *schema.ResourceData, meta interfac
 				return fmt.Errorf(
 					"error trying to update old service '%s' for host '%s': %s",
 					oldSrv["key"].(string),
-					hostID,
+					host.Name(),
 					err,
 				)
 			}
@@ -185,7 +201,7 @@ func resourceVSphereHostServiceStateUpdate(d *schema.ResourceData, meta interfac
 
 		if err = hostservicestate.SetServiceState(
 			client,
-			hostID,
+			host,
 			newSrv,
 			provider.DefaultAPITimeout,
 			true,
@@ -193,7 +209,7 @@ func resourceVSphereHostServiceStateUpdate(d *schema.ResourceData, meta interfac
 			return fmt.Errorf(
 				"error trying to update new service '%s' for host '%s': %s",
 				newSrv["key"].(string),
-				hostID,
+				host.Name(),
 				err,
 			)
 		}
@@ -206,16 +222,20 @@ func resourceVSphereHostServiceStateDelete(d *schema.ResourceData, meta interfac
 	log.Printf("[DEBUG] entering resource_vsphere_host_service_state delete function")
 
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return err
+	}
+
 	srvs := d.Get("service").([]interface{})
 
-	log.Printf("[INFO] deleting host services for host '%s'", hostID)
+	log.Printf("[INFO] deleting host services for host '%s'", host.Name())
 
 	for _, v := range srvs {
 		srv := v.(map[string]interface{})
 		err := hostservicestate.SetServiceState(
 			client,
-			hostID,
+			host,
 			srv,
 			provider.DefaultAPITimeout,
 			false,
@@ -224,7 +244,7 @@ func resourceVSphereHostServiceStateDelete(d *schema.ResourceData, meta interfac
 			return fmt.Errorf(
 				"error trying to delete service '%s' for host '%s': %s",
 				srv["key"].(string),
-				hostID,
+				host,
 				err,
 			)
 		}
@@ -237,9 +257,14 @@ func resourceVSphereHostServiceStateImport(ctx context.Context, d *schema.Resour
 	log.Printf("[DEBUG] entering resource host service state import function")
 
 	client := meta.(*Client).vimClient
-	hsList, err := hostservicestate.GetHostServies(client, d.Id(), provider.DefaultAPITimeout)
+	host, hr, err := hostsystem.CheckIfHostnameOrID(client, d.Id())
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving host services for host '%s': %s", d.Id(), err)
+		return nil, err
+	}
+
+	hsList, err := hostservicestate.GetHostServies(client, host, provider.DefaultAPITimeout)
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving host services for host '%s': %s", host.Name(), err)
 	}
 
 	srvs := make([]interface{}, 0, len(hsList))
@@ -264,7 +289,7 @@ func resourceVSphereHostServiceStateImport(ctx context.Context, d *schema.Resour
 	}
 
 	d.SetId(d.Id())
-	d.Set("host_system_id", d.Id())
+	d.Set(hr.IDName, hr.Value)
 	d.Set("service", srvs)
 
 	return []*schema.ResourceData{d}, nil

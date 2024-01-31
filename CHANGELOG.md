@@ -1,4 +1,12 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 3.0.0 (January 30, 2024)
+
+IMPROVEMENTS:
+* Implemented the id shim functions for a host on several resources which now gives those resources the ability to reference a host by the `host_system_id` or by the `hostname` attribute.
+
+BREAKING CHANGES:
+* Updated the `host` attribute on the `vsphere_vnic` resource to `host_system_id` to standardize naming with the rest of the resources that reference a host
+
 ## 2.10.0 (January 11, 2024)
 
 FEATURES:

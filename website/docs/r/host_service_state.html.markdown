@@ -26,6 +26,19 @@ resource "vsphere_host_service_state" "host" {
 }
 ```
 
+**Using hostname**
+
+```hcl
+resource "vsphere_host_service_state" "host" {
+  hostname = "host.example.com"
+
+  service {
+    key = "TSM-SSH"
+    policy = "on"
+  }
+}
+```
+
 **Create with multiple services:**
 
 ```hcl
@@ -71,7 +84,8 @@ resource "vsphere_host_service_state" "hosts" {
 
 The following arguments are supported:
 
-* `host_system_id` - (Required) ID of esxi host
+* `host_system_id` - (Required/Optional) ID of esxi host
+* `hostname` - (Required/Optional) Hostname of esxi host
 * `service` - (Required) List of host services to enable
     * `key` - (Required) The key to service to enable (case sensitive)
         * `DCUI`           - Direct Console UI
@@ -95,6 +109,8 @@ The following arguments are supported:
         * `off` - Start and stop manually
         * `automatic` - Start and stop with port usage
 
+~> **NOTE:** Must choose either `host_system_id` or `hostname` but not both
+
 ## Attribute Reference
 
 * `id` - The ID of the host that services are updated.
@@ -111,6 +127,12 @@ terraform import vsphere_host_service_state.host host-01
 ```
 
 The above would import the active running services for host with ID `host-01`.
+
+We can also import by hostname if `hostname` attribute is set
+
+```
+terraform import vsphere_host_service_state.host host.example.com
+```
 
 ## Note when deleting service/resource
 

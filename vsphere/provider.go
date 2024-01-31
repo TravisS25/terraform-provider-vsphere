@@ -187,6 +187,7 @@ func Provider() *schema.Provider {
 			"vsphere_iscsi_target":               dataSourceVSphereIscsiTarget(),
 			"vsphere_host_config_date_time":      dataSourceVSphereHostConfigDateTime(),
 			"vsphere_host_config_syslog":         dataSourceVSphereHostConfigSyslog(),
+			"vsphere_host_list":                  dataSourceVSphereHostList(),
 		},
 
 		ConfigureFunc: providerConfigure,

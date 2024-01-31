@@ -93,6 +93,61 @@ resource "vsphere_distributed_virtual_switch" "vds" {
 }
 ```
 
+### Using hostname
+
+```hcl
+variable "esxi_hosts" {
+  default = [
+    "esxi-01.example.com",
+    "esxi-02.example.com",
+    "esxi-03.example.com",
+  ]
+}
+
+variable "network_interfaces" {
+  default = [
+    "vmnic0",
+    "vmnic1",
+    "vmnic2",
+    "vmnic3",
+  ]
+}
+
+data "vsphere_datacenter" "datacenter" {
+  name = "dc-01"
+}
+
+data "vsphere_host" "host" {
+  count         = length(var.esxi_hosts)
+  name          = var.esxi_hosts[count.index]
+  datacenter_id = data.vsphere_datacenter.datacenter.id
+}
+
+resource "vsphere_distributed_virtual_switch" "vds" {
+  name          = "vds-01"
+  datacenter_id = data.vsphere_datacenter.datacenter.id
+
+  uplinks         = ["uplink1", "uplink2", "uplink3", "uplink4"]
+  active_uplinks  = ["uplink1", "uplink2"]
+  standby_uplinks = ["uplink3", "uplink4"]
+
+  host {
+    hostname = data.vsphere_host.host.0.hostname
+    devices  = ["${var.network_interfaces}"]
+  }
+
+  host {
+    hostname = data.vsphere_host.host.1.hostname
+    devices  = ["${var.network_interfaces}"]
+  }
+
+  host {
+    hostname = data.vsphere_host.host.2.hostname
+    devices  = ["${var.network_interfaces}"]
+  }
+}
+```
+
 ### Uplink name and count control
 
 The following abridged example below demonstrates how you can manage the number
@@ -175,10 +230,13 @@ and requires vCenter Server.
 
 - `host` - (Optional) Use the `host` block to declare a host specification. The
   options are:
-- `host_system_id` - (Required) The host system ID of the host to add to the
+- `host_system_id` - (Required/Optional) The host system ID of the host to add to the
   VDS.
+- `hostname` - (Required/Optional) The hostname of the host to add to the VDS.
 - `devices` - (Optional) The list of NIC devices to map to uplinks on the VDS,
   added in order they are specified.
+
+~> **NOTE:** Must choose either `host_system_id` or `hostname` but not both
 
 ### Private VLAN mapping arguments
 

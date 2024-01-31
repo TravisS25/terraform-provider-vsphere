@@ -41,7 +41,7 @@ resource "vsphere_distributed_port_group" "p1" {
 }
 
 resource "vsphere_vnic" "v1" {
-  host                    = data.vsphere_host.h1.id
+  host_system_id          = data.vsphere_host.h1.id
   distributed_switch_port = vsphere_distributed_virtual_switch.d1.id
   distributed_port_group  = vsphere_distributed_port_group.p1.id
   ipv4 {
@@ -65,7 +65,7 @@ data "vsphere_host" "h1" {
 
 resource "vsphere_host_virtual_switch" "hvs1" {
   name             = "dc_HPG0"
-  host_system_id   = data.vsphere_host.h1.id
+  hostname         = data.vsphere_host.h1.hostname
   network_adapters = ["vmnic3", "vmnic4"]
   active_nics      = ["vmnic3"]
   standby_nics     = ["vmnic4"]
@@ -74,12 +74,12 @@ resource "vsphere_host_virtual_switch" "hvs1" {
 resource "vsphere_host_port_group" "p1" {
   name                = "my-pg"
   virtual_switch_name = vsphere_host_virtual_switch.hvs1.name
-  host_system_id      = data.vsphere_host.h1.id
+  hostname      = data.vsphere_host.h1.hostname
 }
 
 resource "vsphere_vnic" "v1" {
-  host      = data.vsphere_host.h1.id
-  portgroup = vsphere_host_port_group.p1.name
+  hostname            = data.vsphere_host.h1.hostname
+  portgroup           = vsphere_host_port_group.p1.name
   ipv4 {
     dhcp = true
   }
@@ -98,6 +98,10 @@ resource "vsphere_vnic" "v1" {
 * `mtu` - (Optional) MTU of the interface.
 * `netstack` - (Optional) TCP/IP stack setting for this interface. Possible values are `defaultTcpipStack``, 'vmotion', 'vSphereProvisioning'. Changing this will force the creation of a new interface since it's not possible to change the stack once it gets created. (Default:`defaultTcpipStack`)
 * `services` - (Optional) Enabled services setting for this interface. Currently support values are `vmotion`, `management`, and `vsan`.
+* `host_system_id` - (Required/Optional) The host id of the host the vnic is connected to
+* `hostname` - (Required/Optional) The hostname of the host the vnic is connected to
+
+~> **NOTE:** Must choose either `host_system_id` or `hostname` but not both
 
 ### IPv4 Options
 
@@ -133,3 +137,11 @@ terraform import vsphere_vnic.v1 host-123_vmk2
 ```
 
 The above would import the vnic `vmk2` from host with ID `host-123`.
+
+We can also import by using hostname of host
+
+```
+terraform import vsphere_vnic.v1 host.example.com_vmk2
+```
+
+The above would import the vnic `vmk2` from host with hostname `host.example.com`.

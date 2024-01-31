@@ -5,11 +5,14 @@ package vsphere
 
 import (
 	"fmt"
+	"log"
 
 	"context"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/vmware/govmomi/vim25/mo"
 )
 
 func resourceVSphereHostVirtualSwitch() *schema.Resource {
@@ -21,9 +24,16 @@ func resourceVSphereHostVirtualSwitch() *schema.Resource {
 			ForceNew:    true,
 		},
 		"host_system_id": {
+			Type:         schema.TypeString,
+			Description:  "The managed object ID of the host to set the virtual switch up on.",
+			Optional:     true,
+			ForceNew:     true,
+			ExactlyOneOf: []string{"hostname"},
+		},
+		"hostname": {
 			Type:        schema.TypeString,
-			Description: "The managed object ID of the host to set the virtual switch up on.",
-			Required:    true,
+			Description: "The hostname of host to set the virtual switch up on.",
+			Optional:    true,
 			ForceNew:    true,
 		},
 	}
@@ -61,8 +71,12 @@ func resourceVSphereHostVirtualSwitch() *schema.Resource {
 func resourceVSphereHostVirtualSwitchCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
 	name := d.Get("name").(string)
-	hsID := d.Get("host_system_id").(string)
-	ns, err := hostNetworkSystemFromHostSystemID(client, hsID)
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return err
+	}
+
+	ns, err := hostNetworkSystemFromHostSystem(host)
 	if err != nil {
 		return fmt.Errorf("error loading host network system: %s", err)
 	}
@@ -74,7 +88,7 @@ func resourceVSphereHostVirtualSwitchCreate(d *schema.ResourceData, meta interfa
 		return fmt.Errorf("error adding host vSwitch: %s", err)
 	}
 
-	saveHostVirtualSwitchID(d, hsID, name)
+	saveHostVirtualSwitchID(d, hr.Value, name)
 
 	return resourceVSphereHostVirtualSwitchRead(d, meta)
 }
@@ -134,8 +148,31 @@ func resourceVSphereHostVirtualSwitchDelete(d *schema.ResourceData, meta interfa
 		return fmt.Errorf("error loading host network system: %s", err)
 	}
 
+	sw, err := hostVSwitchFromName(client, ns, name)
+	if err != nil {
+		return fmt.Errorf("error fetching virtual switch data: %s", err)
+	}
+
+	var moNs mo.HostNetworkSystem
+
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
+
+	if err = ns.Properties(ctx, ns.Reference(), nil, &moNs); err != nil {
+		return fmt.Errorf("error fetching host network system properties")
+	}
+
+	for _, pg := range moNs.NetworkInfo.Portgroup {
+		if pg.Spec.VswitchName == sw.Name && pg.Spec.Name == "Management Network" {
+			log.Printf(
+				"[DEBUG] Deleting host vswitch '%s' from tf state but not actually removing vswitch from host as this host "+
+					"contains 'Management Network' port group which can't be deleted from host",
+				sw.Name,
+			)
+			return nil
+		}
+	}
+
 	if err := ns.RemoveVirtualSwitch(ctx, name); err != nil {
 		return fmt.Errorf("error deleting host vSwitch: %s", err)
 	}
@@ -143,19 +180,22 @@ func resourceVSphereHostVirtualSwitchDelete(d *schema.ResourceData, meta interfa
 	return nil
 }
 
-func resourceVSphereHostVirtualSwitchImport(d *schema.ResourceData, _ interface{}) ([]*schema.ResourceData, error) {
+func resourceVSphereHostVirtualSwitchImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	client := meta.(*Client).vimClient
 	hostID, switchName, err := splitHostVirtualSwitchID(d.Id())
 	if err != nil {
 		return []*schema.ResourceData{}, err
 	}
 
-	err = d.Set("host_system_id", hostID)
+	_, hr, err := hostsystem.CheckIfHostnameOrID(client, hostID)
 	if err != nil {
 		return []*schema.ResourceData{}, err
 	}
 
-	err = d.Set("name", switchName)
-	if err != nil {
+	if err = d.Set(hr.IDName, hr.Value); err != nil {
+		return []*schema.ResourceData{}, err
+	}
+	if err = d.Set("name", switchName); err != nil {
 		return []*schema.ResourceData{}, err
 	}
 

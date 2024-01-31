@@ -42,10 +42,11 @@ func resourceVSphereDistributedVirtualSwitch() *schema.Resource {
 	structure.MergeSchema(s, schemaDVSCreateSpec())
 
 	return &schema.Resource{
-		Create: resourceVSphereDistributedVirtualSwitchCreate,
-		Read:   resourceVSphereDistributedVirtualSwitchRead,
-		Update: resourceVSphereDistributedVirtualSwitchUpdate,
-		Delete: resourceVSphereDistributedVirtualSwitchDelete,
+		Create:        resourceVSphereDistributedVirtualSwitchCreate,
+		Read:          resourceVSphereDistributedVirtualSwitchRead,
+		Update:        resourceVSphereDistributedVirtualSwitchUpdate,
+		Delete:        resourceVSphereDistributedVirtualSwitchDelete,
+		CustomizeDiff: resourceVSphereDistributedVirtualSwitchCustomDiff,
 		Importer: &schema.ResourceImporter{
 			State: resourceVSphereDistributedVirtualSwitchImport,
 		},
@@ -79,7 +80,11 @@ func resourceVSphereDistributedVirtualSwitchCreate(d *schema.ResourceData, meta 
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
-	spec := expandDVSCreateSpec(d)
+	spec, err := expandDVSCreateSpec(d, client)
+	if err != nil {
+		return fmt.Errorf("error creating spec: %s", err)
+	}
+
 	task, err := fo.CreateDVS(ctx, spec)
 	if err != nil {
 		return fmt.Errorf("error creating DVS: %s", err)
@@ -161,7 +166,7 @@ func resourceVSphereDistributedVirtualSwitchRead(d *schema.ResourceData, meta in
 	_ = d.Set("folder", folder.NormalizePath(f))
 
 	// Read in config info
-	if err := flattenVMwareDVSConfigInfo(d, props.Config.(*types.VMwareDVSConfigInfo)); err != nil {
+	if err := flattenVMwareDVSConfigInfo(d, client, props.Config.(*types.VMwareDVSConfigInfo)); err != nil {
 		return err
 	}
 
@@ -229,7 +234,11 @@ func resourceVSphereDistributedVirtualSwitchUpdate(d *schema.ResourceData, meta 
 		_ = d.Set("config_version", props.Config.(*types.VMwareDVSConfigInfo).ConfigVersion)
 	}
 
-	spec := expandVMwareDVSConfigSpec(d)
+	spec, err := expandVMwareDVSConfigSpec(d, client, dvs)
+	if err != nil {
+		return fmt.Errorf("error retrieving config: %s", err)
+	}
+
 	if err := updateDVSConfiguration(dvs, spec); err != nil {
 		return fmt.Errorf("could not update DVS: %s", err)
 	}
@@ -304,4 +313,31 @@ func resourceVSphereDistributedVirtualSwitchImport(d *schema.ResourceData, meta 
 	}
 	d.SetId(props.Uuid)
 	return []*schema.ResourceData{d}, nil
+}
+
+func resourceVSphereDistributedVirtualSwitchCustomDiff(ctx context.Context, rd *schema.ResourceDiff, meta interface{}) error {
+	hosts := rd.Get("host").(*schema.Set).List()
+
+	for _, val := range hosts {
+		host := val.(map[string]interface{})
+
+		usingHostSystemID := false
+		usingHostname := false
+
+		if host["host_system_id"] != "" {
+			usingHostSystemID = true
+		}
+		if host["hostname"] != "" {
+			usingHostname = true
+		}
+
+		if usingHostname && usingHostSystemID {
+			return fmt.Errorf("can't set both 'host_system_id' and 'hostname' attribute for a resource in the 'host' resource list")
+		}
+		if !usingHostname && !usingHostSystemID {
+			return fmt.Errorf("must set either 'host_system_id' or 'hostname' attribute for all resources in the 'host' resource list")
+		}
+	}
+
+	return nil
 }

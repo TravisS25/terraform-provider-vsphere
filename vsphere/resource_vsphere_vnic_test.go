@@ -15,6 +15,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/testhelper"
 	"github.com/vmware/govmomi"
 )
@@ -242,7 +243,12 @@ func testAccVsphereVNicNetworkSettings(name, ipv4State, ipv6State, netstack stri
 		hostID := idParts[0]
 		vmnicID := idParts[1]
 		client := testAccProvider.Meta().(*Client).vimClient
-		vnic, err := getVnicFromHost(context.TODO(), client, hostID, vmnicID)
+		host, _, err := hostsystem.CheckIfHostnameOrID(client, hostID)
+		if err != nil {
+			return fmt.Errorf("error retrieving host for vnic network settings: %s", err)
+		}
+
+		vnic, err := getVnicFromHost(context.TODO(), client, host, vmnicID)
 		if err != nil {
 			return err
 		}
@@ -366,8 +372,12 @@ func nicExists(client *govmomi.Client, nicID string) (bool, error) {
 	toks := strings.Split(nicID, "_")
 	vmnicID := toks[1]
 	hostID := toks[0]
-	_, err := getVnicFromHost(context.TODO(), client, hostID, vmnicID)
+	host, _, err := hostsystem.CheckIfHostnameOrID(client, hostID)
 	if err != nil {
+		return false, fmt.Errorf("error retrieving host for vnicID: %s", err)
+	}
+
+	if _, err = getVnicFromHost(context.TODO(), client, host, vmnicID); err != nil {
 		if err.Error() == fmt.Sprintf("vNic interface with id %s not found", vmnicID) {
 			return false, nil
 		}
