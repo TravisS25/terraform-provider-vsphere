@@ -16,8 +16,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"github.com/vmware/govmomi/sts"
+
 	"github.com/vmware/govmomi/license"
+	"github.com/vmware/govmomi/sts"
 	"github.com/vmware/govmomi/vapi/rest"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"

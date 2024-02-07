@@ -1,4 +1,9 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 3.2.0 (February 22, 2024)
+FEATURES:
+* `resource/vsphere_host_config_snmp` : Adds ability to enable snmp settings for esxi host
+* `datasource/vsphere_host_config_snmp` : Adds ability to query snmp setings from esxi host
+
 ## 3.1.1 (February 13, 2024)
 IMPROVEMENTS:
 * Added more id shims to resources
