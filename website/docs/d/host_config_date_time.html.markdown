@@ -19,17 +19,27 @@ data "vsphere_host_config_date_time" "host" {
 }
 ```
 
+**Using hostname**
+
+```hcl
+data "vsphere_host_config_date_time" "host" {
+  hostname = "host.example.com"
+}
+```
+
 ## Argument Reference
 
 The following arguments are supported:
 
-* `host_system_id` - (Required) The id of the host we want to gather date time configuration
+* `host_system_id` - (Required/Optional) The id of the host we want to gather date time configuration
+* `hostname` - (Required/Optional) The hostname of the host we want to gather date time configuration
 
 
 ## Attribute Reference
 
 * `id` - Same as `host_system_id`
 * `host_system_id` - The id of the host we want to gather date time info
+* `hostname` - The hostname of the host we want to gather date time info
 * `ntp_servers` - Gathers list of ntp servers set for given host
 * `protocol` - Gathers network time configuration for clock
 * `events_disabled` - Gathers whether events are disabled

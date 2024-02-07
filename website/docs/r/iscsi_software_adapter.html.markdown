@@ -17,7 +17,7 @@ Enables VMware vSphere iscsi software adapter for a given host
 
 ```hcl
 resource "vsphere_iscsi_software_adapter" "host" {
-  host_system_id = "my_host_id"
+  host_system_id = "host-01"
 }
 ```
 
@@ -25,8 +25,16 @@ resource "vsphere_iscsi_software_adapter" "host" {
 
 ```hcl
 resource "vsphere_iscsi_software_adapter" "host" {
-  host_system_id   = "my_host_id"
+  host_system_id   = "host-01"
   iscsi_name = "custom_iscsi_name"
+}
+```
+
+**Using hostname:**
+
+```hcl
+resource "vsphere_iscsi_software_adapter" "host" {
+  hostname = "host.example.com"
 }
 ```
 
@@ -34,25 +42,33 @@ resource "vsphere_iscsi_software_adapter" "host" {
 
 The following arguments are supported:
 
-* `host_system_id` - (Required) The host id to enable iscsi software adapter
+* `host_system_id` - (Required/Optional) The host id to enable iscsi software adapter
+* `hostname` - (Required/Optional) The hostname to enable iscsi software adapter
 * `iscsi_name` - (Optional) The unique iqn name for the iscsi software adapter.  If left blank, vmware will generate the iqn name
 
+~> **NOTE:** Must choose either `host_system_id` or `hostname` but not both
 
 ## Attribute Reference
 
-* `id` - Represents the host and software adapter id in the form of: `<host_system_id>:<adapter_id>`
-* `host_system_id` - The host id the iscsi software adapter is attached to
-* `iscsi_name` - The iscsi software adapter name from either being user defined or vmware generated
+* `id` - Represents the host and software adapter id in the form of: `<host_system_id | hostname>:<adapter_id>`
 
 ## Importing
 
 An existing iscsi software adapter can be imported into this resource
-via `<host_system_id>:<adapter_id>`.  An example is below:
+via `<host_system_id | hostname>:<adapter_id>`.  An example is below:
 
 ```
 terraform import vsphere_iscsi_software_adapter.host host-1:vmhba65
 ```
 
-The above would import the iscsi software adapter from host `host-1` and software adapter id of `vmhba65`
+The above would import the iscsi software adapter from host with id `host-1` and software adapter id of `vmhba65`
+
+Using hostname:
+
+```
+terraform import vsphere_iscsi_software_adapter.host host.example.com:vmhba65
+```
+
+The above would import the iscsi software adapter from host with hostname `host.example.com` and software adapter id of `vmhba65`
 
 ~> **NOTE:** The iscsi software adapter for given host must already be enabled for import to work or an error will occur

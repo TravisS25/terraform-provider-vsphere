@@ -33,25 +33,99 @@ func TestAccResourceVSphereIscsiSoftwareAdapter_basic(t *testing.T) {
 		CheckDestroy: testAccVSphereIscsiSoftwareAdapterDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(testIscsiName),
+				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(testIscsiName, false),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVSphereIscsiSoftwareAdapterValidation("vsphere_iscsi_software_adapter.h1", testIscsiName),
 				),
 			},
 			{
-				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
+				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName, false),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVSphereIscsiSoftwareAdapterValidation("vsphere_iscsi_software_adapter.h1", newTestIscsiName),
 				),
 			},
 			{
 				ResourceName: "vsphere_iscsi_software_adapter.h1",
-				Config:       testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
+				Config:       testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName, false),
 				ImportState:  true,
 			},
 		},
 	})
 }
+
+func TestAccResourceVSphereIscsiSoftwareAdapter_hostname(t *testing.T) {
+	testIscsiName := "iqn.1998-01.com.testacc"
+	newTestIscsiName := testIscsiName + ".new"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			RunSweepers()
+			testAccPreCheck(t)
+			testAccCheckEnvVariablesF(
+				t,
+				[]string{"TF_VAR_VSPHERE_DATACENTER", "TF_VAR_VSPHERE_CLUSTER", "TF_VAR_VSPHERE_ESXI1"},
+			)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccVSphereIscsiSoftwareAdapterDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(testIscsiName, true),
+				Check: resource.ComposeTestCheckFunc(
+					testAccVSphereIscsiSoftwareAdapterValidation("vsphere_iscsi_software_adapter.h1", testIscsiName),
+				),
+			},
+			{
+				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName, true),
+				Check: resource.ComposeTestCheckFunc(
+					testAccVSphereIscsiSoftwareAdapterValidation("vsphere_iscsi_software_adapter.h1", newTestIscsiName),
+				),
+			},
+			{
+				ResourceName: "vsphere_iscsi_software_adapter.h1",
+				Config:       testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName, true),
+				ImportState:  true,
+			},
+		},
+	})
+}
+
+// func TestAccResourceVSphereIscsiSoftwareAdapter_hostname(t *testing.T) {
+// 	testIscsiName := "iqn.1998-01.com.testacc"
+// 	newTestIscsiName := testIscsiName + ".new"
+
+// 	resource.Test(t, resource.TestCase{
+// 		PreCheck: func() {
+// 			RunSweepers()
+// 			testAccPreCheck(t)
+// 			testAccCheckEnvVariablesF(
+// 				t,
+// 				[]string{"TF_VAR_VSPHERE_DATACENTER", "TF_VAR_VSPHERE_CLUSTER", "TF_VAR_VSPHERE_ESXI1"},
+// 			)
+// 		},
+// 		Providers:    testAccProviders,
+// 		CheckDestroy: testAccVSphereIscsiSoftwareAdapterDestroy,
+// 		Steps: []resource.TestStep{
+// 			{
+// 				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(testIscsiName),
+// 				Check: resource.ComposeTestCheckFunc(
+// 					testAccVSphereIscsiSoftwareAdapterValidation("vsphere_iscsi_software_adapter.h1", testIscsiName),
+// 				),
+// 			},
+// 			{
+// 				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
+// 				Check: resource.ComposeTestCheckFunc(
+// 					testAccVSphereIscsiSoftwareAdapterValidation("vsphere_iscsi_software_adapter.h1", newTestIscsiName),
+// 				),
+// 			},
+// 			{
+// 				ResourceName: "vsphere_iscsi_software_adapter.h1",
+// 				Config:       testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
+// 				ImportState:  true,
+// 			},
+// 		},
+// 	})
+// }
 
 func testAccVSphereIscsiSoftwareAdapterDestroy(s *terraform.State) error {
 	message := ""
@@ -59,15 +133,18 @@ func testAccVSphereIscsiSoftwareAdapterDestroy(s *terraform.State) error {
 		if rs.Type != "vsphere_host" {
 			continue
 		}
-		idSplit := strings.Split(rs.Primary.ID, ":")
-		hostID := idSplit[0]
 		client := testAccProvider.Meta().(*Client).vimClient
-		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+		idSplit := strings.Split(rs.Primary.ID, ":")
+		host, _, err := hostsystem.CheckIfHostnameOrID(client, idSplit[0])
+		if err != nil {
+			return fmt.Errorf("error retrieving host for iscsi: %s", err)
+		}
+		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
 		if err != nil {
 			return err
 		}
 
-		if _, err = iscsi.GetIscsiSoftwareAdater(hssProps, hostID); err == nil {
+		if _, err = iscsi.GetIscsiSoftwareAdater(hssProps, host.Name()); err == nil {
 			message = "iscsi software adapter still exists/enabled"
 		}
 	}
@@ -85,14 +162,17 @@ func testAccVSphereIscsiSoftwareAdapterValidation(resourceName, iscsiName string
 			return fmt.Errorf("%s key not found on the server", resourceName)
 		}
 		idSplit := strings.Split(rs.Primary.ID, ":")
-		hostID := idSplit[0]
 		client := testAccProvider.Meta().(*Client).vimClient
-		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+		host, _, err := hostsystem.CheckIfHostnameOrID(client, idSplit[0])
+		if err != nil {
+			return fmt.Errorf("error retrieving host for iscsi: %s", err)
+		}
+		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
 		if err != nil {
 			return err
 		}
 
-		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
+		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, host.Name())
 		if err != nil {
 			return err
 		}
@@ -101,7 +181,7 @@ func testAccVSphereIscsiSoftwareAdapterValidation(resourceName, iscsiName string
 			return fmt.Errorf(
 				"iscsi adapter name invalid.  current value: %s; expected value: %s",
 				adapter.IScsiName,
-				hostID,
+				host.Name(),
 			)
 		}
 
@@ -109,21 +189,38 @@ func testAccVSphereIscsiSoftwareAdapterValidation(resourceName, iscsiName string
 	}
 }
 
-func testAccResourceVSphereIscsiSoftwareAdapterConfig(iscsiName string) string {
-	return fmt.Sprintf(
+func testAccResourceVSphereIscsiSoftwareAdapterConfig(iscsiName string, useHostname bool) string {
+	resourceStr :=
 		`
 	%s
 
 	resource "vsphere_iscsi_software_adapter" "h1" {
-		host_system_id = data.vsphere_host.roothost1.id
+		%s
 		iscsi_name = "%s"
 	}
-	`,
+	`
+
+	if useHostname {
+		return fmt.Sprintf(
+			resourceStr,
+			testhelper.CombineConfigs(
+				testhelper.ConfigDataRootDC1(),
+				testhelper.ConfigDataRootComputeCluster1(),
+				testhelper.ConfigDataRootHost1(),
+			),
+			"hostname = data.vsphere_host.roothost1.name",
+			iscsiName,
+		)
+	}
+
+	return fmt.Sprintf(
+		resourceStr,
 		testhelper.CombineConfigs(
 			testhelper.ConfigDataRootDC1(),
 			testhelper.ConfigDataRootComputeCluster1(),
 			testhelper.ConfigDataRootHost1(),
 		),
+		"host_system_id = data.vsphere_host.roothost1.id",
 		iscsiName,
 	)
 }

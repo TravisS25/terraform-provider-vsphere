@@ -19,9 +19,15 @@ func dataSourceVSphereHostConfigDateTime() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"host_system_id": {
+				Type:         schema.TypeString,
+				Description:  "Host id of machine to gather ntp info",
+				Optional:     true,
+				ExactlyOneOf: []string{"hostname"},
+			},
+			"hostname": {
 				Type:        schema.TypeString,
-				Description: "Host id of machine to gather ntp info",
-				Required:    true,
+				Description: "Hostname of machine to gather ntp info",
+				Optional:    true,
 			},
 			"ntp_servers": {
 				Type:        schema.TypeSet,
@@ -50,27 +56,25 @@ func dataSourceVSphereHostConfigDateTime() *schema.Resource {
 
 func dataSourceVSphereHostConfigDateTimeRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-
-	log.Printf("[INFO] reading date time configuration for data source on host '%s'", hostID)
-
-	host, err := hostsystem.FromID(client, hostID)
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
-		return err
+		return fmt.Errorf("error retrieving host for 'vsphere_host_config_date_time' on data source read: %s", err)
 	}
+
+	log.Printf("[INFO] reading date time configuration for data source on host '%s'", host.Name())
 
 	hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
 	if err != nil {
-		return fmt.Errorf("error trying to get datetime system object from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to get datetime system object from host '%s': %s", host.Name(), err)
 	}
 
 	var hostDtProps mo.HostDateTimeSystem
 	if err = hostDt.Properties(context.Background(), hostDt.Reference(), nil, &hostDtProps); err != nil {
-		return fmt.Errorf("error trying to gather datetime properties from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to gather datetime properties from host '%s': %s", host.Name(), err)
 	}
 
-	d.SetId(hostID)
-	d.Set("host_system_id", hostID)
+	d.SetId(hr.Value)
+	d.Set(hr.IDName, hr.Value)
 	d.Set("protocol", hostDtProps.DateTimeInfo.SystemClockProtocol)
 	d.Set("events_disabled", hostDtProps.DateTimeInfo.DisableEvents)
 	d.Set("fallback_disabled", hostDtProps.DateTimeInfo.DisableFallback)

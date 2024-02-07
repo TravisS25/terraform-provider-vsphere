@@ -9,6 +9,8 @@ import (
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/iscsi"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -25,10 +27,17 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 		CustomizeDiff: resourceVSphereIscsiTargetCustomDiff,
 		Schema: map[string]*schema.Schema{
 			"host_system_id": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ForceNew:     true,
+				Description:  "ID of the host system to attach iscsi adapter to",
+				ExactlyOneOf: []string{"hostname"},
+			},
+			"hostname": {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 				ForceNew:    true,
-				Description: "ID of the host system to attach iscsi adapter to",
+				Description: "Hostname of host system to attach iscsi adapter to",
 			},
 			"adapter_id": {
 				Type:        schema.TypeString,
@@ -69,10 +78,14 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 
 func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
 	adapterID := d.Get("adapter_id").(string)
 
-	hss, err := hostsystem.GetHostStorageSystemFromHost(client, hostID)
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host for iscsi: %s", err)
+	}
+
+	hss, err := hostsystem.GetHostStorageSystemFromHost(client, host)
 	if err != nil {
 		return err
 	}
@@ -115,7 +128,7 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 	if len(hbaSendTargets) > 0 {
 		if err = iscsi.AddInternetScsiSendTargets(
 			client,
-			hostID,
+			host.Name(),
 			adapterID,
 			hssProps,
 			hbaSendTargets,
@@ -158,7 +171,7 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 	if len(hbaStaticTargets) > 0 {
 		if err = iscsi.AddInternetScsiStaticTargets(
 			client,
-			hostID,
+			host.Name(),
 			adapterID,
 			hssProps,
 			hbaStaticTargets,
@@ -171,32 +184,35 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	d.SetId(fmt.Sprintf("%s:%s", hostID, adapterID))
+	d.SetId(iscsi.GetIscsiTargetID(hr.Value, adapterID))
 
 	return nil
 }
 
 func resourceVSphereIscsiTargetRead(d *schema.ResourceData, meta interface{}) error {
-	return iscsiTargetRead(
-		d,
-		meta,
-		d.Get("host_system_id").(string),
-		d.Get("adapter_id").(string),
-		true,
-	)
+	client := meta.(*Client).vimClient
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host for iscsi read: %s", err)
+	}
+
+	return iscsiTargetRead(client, d, host, d.Get("adapter_id").(string), true)
 }
 
 func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-	adapterID := d.Get("adapter_id").(string)
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host for iscsi create: %s", err)
+	}
 
-	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+	adapterID := d.Get("adapter_id").(string)
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
 	if err != nil {
 		return err
 	}
 
-	if _, err = iscsi.GetIscsiAdater(hssProps, hostID, adapterID); err != nil {
+	if _, err = iscsi.GetIscsiAdater(hssProps, host.Name(), adapterID); err != nil {
 		return err
 	}
 
@@ -248,7 +264,7 @@ func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) 
 		if len(hbaRemoveTargets) > 0 {
 			if err = iscsi.RemoveInternetScsiSendTargets(
 				client,
-				hostID,
+				host.Name(),
 				adapterID,
 				hssProps,
 				hbaRemoveTargets,
@@ -260,7 +276,7 @@ func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) 
 		if len(hbaAddTargets) > 0 {
 			if err = iscsi.AddInternetScsiSendTargets(
 				client,
-				hostID,
+				host.Name(),
 				adapterID,
 				hssProps,
 				hbaAddTargets,
@@ -320,7 +336,7 @@ func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) 
 		if len(hbaRemoveTargets) > 0 {
 			if err = iscsi.RemoveInternetScsiStaticTargets(
 				client,
-				hostID,
+				host.Name(),
 				adapterID,
 				hssProps,
 				hbaRemoveTargets,
@@ -332,7 +348,7 @@ func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) 
 		if len(hbaAddTargets) > 0 {
 			if err = iscsi.AddInternetScsiStaticTargets(
 				client,
-				hostID,
+				host.Name(),
 				adapterID,
 				hssProps,
 				hbaAddTargets,
@@ -347,10 +363,14 @@ func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) 
 
 func resourceVSphereIscsiTargetDelete(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host for iscsi create: %s", err)
+	}
+
 	adapterID := d.Get("adapter_id").(string)
 
-	hss, err := hostsystem.GetHostStorageSystemFromHost(client, hostID)
+	hss, err := hostsystem.GetHostStorageSystemFromHost(client, host)
 	if err != nil {
 		return err
 	}
@@ -384,13 +404,25 @@ func resourceVSphereIscsiTargetDelete(d *schema.ResourceData, meta interface{}) 
 	}
 
 	if len(removeSendTargets) > 0 {
-		if err = iscsi.RemoveInternetScsiSendTargets(client, hostID, adapterID, hssProps, removeSendTargets); err != nil {
+		if err = iscsi.RemoveInternetScsiSendTargets(
+			client,
+			host.Name(),
+			adapterID,
+			hssProps,
+			removeSendTargets,
+		); err != nil {
 			return err
 		}
 	}
 
 	if len(removeStaticTargets) > 0 {
-		if err = iscsi.RemoveInternetScsiStaticTargets(client, hostID, adapterID, hssProps, removeStaticTargets); err != nil {
+		if err = iscsi.RemoveInternetScsiStaticTargets(
+			client,
+			host.Name(),
+			adapterID,
+			hssProps,
+			removeStaticTargets,
+		); err != nil {
 			return err
 		}
 	}
@@ -409,37 +441,56 @@ func resourceVSphereIscsiTargetImport(d *schema.ResourceData, meta interface{}) 
 		return nil, fmt.Errorf("invalid import format; should be '<host_system_id>:<adapter_id>'")
 	}
 
-	hostID := idSplit[0]
-	adapterID := idSplit[1]
-
-	err := iscsiTargetRead(d, meta, hostID, adapterID, false)
+	client := meta.(*Client).vimClient
+	host, hr, err := hostsystem.CheckIfHostnameOrID(client, idSplit[0])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error retrieving host '%s' on import: %s", idSplit[0], err)
 	}
 
+	if err = iscsiTargetRead(client, d, host, idSplit[1], false); err != nil {
+		return nil, fmt.Errorf("error reading iscsi target properties on import for host '%s': %s", host.Name(), err)
+	}
+
+	d.SetId(iscsi.GetIscsiTargetID(hr.Value, idSplit[1]))
+	d.Set(hr.IDName, hr.Value)
 	return []*schema.ResourceData{d}, nil
 }
 
 func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
+	var host *object.HostSystem
+	var err error
+
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
+
+	if d.Get("host_system_id") != "" {
+		host, _, err = hostsystem.CheckIfHostnameOrID(client, d.Get("host_system_id").(string))
+	} else {
+		host, _, err = hostsystem.CheckIfHostnameOrID(client, d.Get("hostname").(string))
+	}
+
+	if err != nil {
+		return fmt.Errorf("error retrieving host on custom diff: %s", err)
+	}
+
 	adapterID := d.Get("adapter_id").(string)
 
-	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
-	if err != nil {
-		return err
-	}
+	if adapterID != "" {
+		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
+		if err != nil {
+			return err
+		}
 
-	adapter, err := iscsi.GetIscsiAdater(hssProps, hostID, adapterID)
-	if err != nil {
-		return err
-	}
+		adapter, err := iscsi.GetIscsiAdater(hssProps, host.Name(), adapterID)
+		if err != nil {
+			return err
+		}
 
-	switch adapter.(type) {
-	case *types.HostInternetScsiHba:
-		break
-	default:
-		return fmt.Errorf("'adapter_id' belongs to a device that does NOT allow static or dynamic discovery")
+		switch adapter.(type) {
+		case *types.HostInternetScsiHba:
+			break
+		default:
+			return fmt.Errorf("'adapter_id' belongs to a device that does NOT allow static or dynamic discovery")
+		}
 	}
 
 	staticTargets, staticOk := d.GetOk("static_target")
@@ -491,17 +542,15 @@ func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.Resourc
 	return nil
 }
 
-func iscsiTargetRead(d *schema.ResourceData, meta interface{}, hostID, adapterID string, isRead bool) error {
-	client := meta.(*Client).vimClient
-
-	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+func iscsiTargetRead(client *govmomi.Client, d *schema.ResourceData, host *object.HostSystem, adapterID string, isRead bool) error {
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
 	if err != nil {
-		return err
+		return fmt.Errorf("error retrieving host system storage properties for host '%s': %s", host.Name(), err)
 	}
 
-	baseAdapter, err := iscsi.GetIscsiAdater(hssProps, hostID, adapterID)
+	baseAdapter, err := iscsi.GetIscsiAdater(hssProps, host.Name(), adapterID)
 	if err != nil {
-		return err
+		return fmt.Errorf("error retrieving base adapter for host '%s': %s", host.Name(), err)
 	}
 
 	adapter := baseAdapter.(*types.HostInternetScsiHba)
@@ -587,7 +636,6 @@ func iscsiTargetRead(d *schema.ResourceData, meta interface{}, hostID, adapterID
 		staticTargets = append(staticTargets, target)
 	}
 
-	d.Set("host_system_id", hostID)
 	d.Set("adapter_id", adapterID)
 	d.Set("send_target", sendTargets)
 	d.Set("static_target", staticTargets)

@@ -25,10 +25,17 @@ func resourceVSphereIscsiSoftwareAdapter() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"host_system_id": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ForceNew:     true,
+				Description:  "Host to enable iscsi software adapter",
+				ExactlyOneOf: []string{"hostname"},
+			},
+			"hostname": {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 				ForceNew:    true,
-				Description: "Host to enable iscsi software adapter",
+				Description: "Hostname of host system to enable software adapter",
 			},
 			"iscsi_name": {
 				Type:        schema.TypeString,
@@ -47,21 +54,24 @@ func resourceVSphereIscsiSoftwareAdapter() *schema.Resource {
 
 func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host for iscsi: %s", err)
+	}
 
-	hss, err := hostsystem.GetHostStorageSystemFromHost(client, hostID)
+	hss, err := hostsystem.GetHostStorageSystemFromHost(client, host)
 	if err != nil {
 		return err
 	}
 
-	if err = iscsi.UpdateSoftwareInternetScsi(client, hss.Reference(), hostID, true); err != nil {
+	if err = iscsi.UpdateSoftwareInternetScsi(client, hss.Reference(), host.Name(), true); err != nil {
 		return err
 	}
 
 	if err = hss.RescanAllHba(context.Background()); err != nil {
 		return fmt.Errorf(
 			"error trying to rescan storage adapters after enabling iscsi software adapter for host '%s': %s",
-			hostID,
+			host.Name(),
 			err,
 		)
 	}
@@ -71,16 +81,16 @@ func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
+	adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, host.Name())
 	if err != nil {
 		return err
 	}
 
-	d.SetId(fmt.Sprintf("%s:%s", hostID, adapter.Device))
+	d.SetId(fmt.Sprintf("%s:%s", hr.Value, adapter.Device))
 	d.Set("adapter_id", adapter.Device)
 
 	if name, ok := d.GetOk("iscsi_name"); ok {
-		if err = iscsi.UpdateIscsiName(hostID, adapter.Device, name.(string), client, hssProps.Reference()); err != nil {
+		if err = iscsi.UpdateIscsiName(host.Name(), adapter.Device, name.(string), client, hssProps.Reference()); err != nil {
 			return err
 		}
 
@@ -98,23 +108,33 @@ func resourceVSphereIscsiSoftwareAdapterRead(d *schema.ResourceData, meta interf
 
 func resourceVSphereIscsiSoftwareAdapterUpdate(d *schema.ResourceData, meta interface{}) error {
 	var err error
-	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
 
-	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+	client := meta.(*Client).vimClient
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
-		return err
+		return fmt.Errorf("error retrieving host for iscsi update: %s", err)
+	}
+
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
+	if err != nil {
+		return fmt.Errorf("error retrieving host system storage properties on update for host '%s': %s", host.Name(), err)
 	}
 
 	if d.HasChange("iscsi_name") {
 		_, iscsiName := d.GetChange("iscsi_name")
-		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
+		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, host.Name())
 		if err != nil {
-			return err
+			return fmt.Errorf("error retrieving iscsi software adapter on update for host '%s': %s", host.Name(), err)
 		}
 
-		if err = iscsi.UpdateIscsiName(hostID, adapter.Device, iscsiName.(string), client, hssProps.Reference()); err != nil {
-			return err
+		if err = iscsi.UpdateIscsiName(
+			host.Name(),
+			adapter.Device,
+			iscsiName.(string),
+			client,
+			hssProps.Reference(),
+		); err != nil {
+			return fmt.Errorf("error updating iscsi software name on update for host '%s': %s", host.Name(), err)
 		}
 	}
 
@@ -124,53 +144,76 @@ func resourceVSphereIscsiSoftwareAdapterUpdate(d *schema.ResourceData, meta inte
 func resourceVSphereIscsiSoftwareAdapterDelete(d *schema.ResourceData, meta interface{}) error {
 	var err error
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-
-	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
-		return err
+		return fmt.Errorf("error retrieving host for iscsi delete: %s", err)
 	}
 
-	return iscsi.UpdateSoftwareInternetScsi(client, hssProps.Reference(), hostID, false)
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
+	if err != nil {
+		return fmt.Errorf(
+			"error retrieving host system storage properties on delete for host '%s': %s",
+			host.Name(),
+			err,
+		)
+	}
+
+	return iscsi.UpdateSoftwareInternetScsi(client, hssProps.Reference(), host.Name(), false)
 }
 
 func resourceVSphereIscsiSoftwareAdapterImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	client := meta.(*Client).vimClient
 	idSplit := strings.Split(d.Id(), ":")
-	hostID := idSplit[0]
-	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
-	if err != nil {
-		return nil, err
+
+	if len(idSplit) != 2 {
+		return nil, fmt.Errorf("invalid import format.  Format should be <host_system_id | hostname>:<adapter_name>")
 	}
 
-	adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
+	host, hr, err := hostsystem.CheckIfHostnameOrID(client, idSplit[0])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error retrieving host for iscsi import: %s", err)
 	}
 
-	d.SetId(fmt.Sprintf("%s:%s", hostID, adapter.Device))
-	d.Set("host_system_id", hostID)
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error retrieving host system storage properties on import for host '%s': %s",
+			host.Name(),
+			err,
+		)
+	}
+
+	adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, host.Name())
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving iscsi software adapter on import for host '%s': %s", host.Name(), err)
+	}
+
+	d.SetId(fmt.Sprintf("%s:%s", hr.Value, adapter.Device))
+	d.Set(hr.IDName, hr.Value)
 	return []*schema.ResourceData{d}, nil
 }
 
 func iscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}, isDataSource bool) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host for iscsi read: %s", err)
+	}
 
-	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
 	if err != nil {
 		return err
 	}
 
 	if hssProps.StorageDeviceInfo.SoftwareInternetScsiEnabled {
-		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, hostID)
+		adapter, err := iscsi.GetIscsiSoftwareAdater(hssProps, host.Name())
 		if err != nil {
 			return err
 		}
 
 		d.Set("iscsi_name", adapter.IScsiName)
 	} else if isDataSource {
-		return fmt.Errorf("iscsi software adapter is not enabled for host '%s'", hostID)
+		return fmt.Errorf("iscsi software adapter is not enabled for host '%s'", host.Name())
 	}
 
 	return nil
