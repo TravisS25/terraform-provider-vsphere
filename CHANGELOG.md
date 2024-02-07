@@ -1,4 +1,12 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 3.1.0 (February 6, 2024)
+FEATURES:
+* `resource/vsphere_vcenter_dns` : Adds ability to set vcenter dns servers
+* `resource/vsphere_vcenter_syslog` : Adds ability to set vcenter syslog servers
+
+* `datasource/vsphere_vcenter_dns` : Adds ability to query for vcenter dns servers
+* `datasource/vsphere_vcenter_syslog` : Adds ability to query for vcenter syslog servers
+
 ## 3.0.0 (January 30, 2024)
 
 IMPROVEMENTS:
