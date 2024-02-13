@@ -90,43 +90,6 @@ func TestAccResourceVSphereIscsiSoftwareAdapter_hostname(t *testing.T) {
 	})
 }
 
-// func TestAccResourceVSphereIscsiSoftwareAdapter_hostname(t *testing.T) {
-// 	testIscsiName := "iqn.1998-01.com.testacc"
-// 	newTestIscsiName := testIscsiName + ".new"
-
-// 	resource.Test(t, resource.TestCase{
-// 		PreCheck: func() {
-// 			RunSweepers()
-// 			testAccPreCheck(t)
-// 			testAccCheckEnvVariablesF(
-// 				t,
-// 				[]string{"TF_VAR_VSPHERE_DATACENTER", "TF_VAR_VSPHERE_CLUSTER", "TF_VAR_VSPHERE_ESXI1"},
-// 			)
-// 		},
-// 		Providers:    testAccProviders,
-// 		CheckDestroy: testAccVSphereIscsiSoftwareAdapterDestroy,
-// 		Steps: []resource.TestStep{
-// 			{
-// 				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(testIscsiName),
-// 				Check: resource.ComposeTestCheckFunc(
-// 					testAccVSphereIscsiSoftwareAdapterValidation("vsphere_iscsi_software_adapter.h1", testIscsiName),
-// 				),
-// 			},
-// 			{
-// 				Config: testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
-// 				Check: resource.ComposeTestCheckFunc(
-// 					testAccVSphereIscsiSoftwareAdapterValidation("vsphere_iscsi_software_adapter.h1", newTestIscsiName),
-// 				),
-// 			},
-// 			{
-// 				ResourceName: "vsphere_iscsi_software_adapter.h1",
-// 				Config:       testAccResourceVSphereIscsiSoftwareAdapterConfig(newTestIscsiName),
-// 				ImportState:  true,
-// 			},
-// 		},
-// 	})
-// }
-
 func testAccVSphereIscsiSoftwareAdapterDestroy(s *terraform.State) error {
 	message := ""
 	for _, rs := range s.RootModule().Resources {
