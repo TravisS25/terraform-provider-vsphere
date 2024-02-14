@@ -23,11 +23,11 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
-// hostReturn is a config struct that allows us to return both the esxi host id key name
+// HostReturn is a config struct that allows us to return both the esxi host id key name
 // along with its value
 //
 // This is mainly used for the "FromHostnameOrID" shim function
-type hostReturn struct {
+type HostReturn struct {
 	IDName string
 	Value  string
 }
@@ -149,7 +149,7 @@ func FromHostname(client *govmomi.Client, hostname string) (*object.HostSystem, 
 //
 // This function, along with updating the attribute api of any resources using esxi host id, will allow users to continue using vmware
 // generated id without breaking but also allows users to use hostname as the id which generally doesn't change and/or is unique
-func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.HostSystem, hostReturn, error) {
+func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.HostSystem, HostReturn, error) {
 	var tfIDName, tfVal string
 	var host *object.HostSystem
 	var err error
@@ -163,10 +163,10 @@ func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.H
 		tfVal = d.Get(tfIDName).(string)
 		host, err = FromHostname(client, tfVal)
 	} else {
-		return nil, hostReturn{}, fmt.Errorf("no valid tf id attribute passed.  One of the following should be passed from resource: 'host_system_id', 'hostname'")
+		return nil, HostReturn{}, fmt.Errorf("no valid tf id attribute passed.  One of the following should be passed from resource: 'host_system_id', 'hostname'")
 	}
 
-	return host, hostReturn{IDName: tfIDName, Value: tfVal}, err
+	return host, HostReturn{IDName: tfIDName, Value: tfVal}, err
 }
 
 // CheckIfHostnameOrID is a helper function that allows users to pass in an id and determine if that id exists
@@ -176,26 +176,26 @@ func FromHostnameOrID(client *govmomi.Client, d *schema.ResourceData) (*object.H
 // or hostname as an attribute
 //
 // This will return "ErrHostnameOrIDNotFound" error type if a host can not be found by either host id or hostname
-func CheckIfHostnameOrID(client *govmomi.Client, tfID string) (*object.HostSystem, hostReturn, error) {
+func CheckIfHostnameOrID(client *govmomi.Client, tfID string) (*object.HostSystem, HostReturn, error) {
 	host, err := FromID(client, tfID)
 	if err != nil {
 		if !viapi.IsManagedObjectNotFoundError(err) {
-			return nil, hostReturn{}, err
+			return nil, HostReturn{}, err
 		}
 
 		host, err = FromHostname(client, tfID)
 		if err != nil {
 			if !errors.Is(err, ErrHostnameNotFound) {
-				return nil, hostReturn{}, err
+				return nil, HostReturn{}, err
 			}
 
-			return nil, hostReturn{}, ErrHostnameOrIDNotFound
+			return nil, HostReturn{}, ErrHostnameOrIDNotFound
 		}
 
-		return host, hostReturn{IDName: "hostname", Value: host.Name()}, nil
+		return host, HostReturn{IDName: "hostname", Value: host.Name()}, nil
 	}
 
-	return host, hostReturn{IDName: "host_system_id", Value: host.Reference().Value}, nil
+	return host, HostReturn{IDName: "host_system_id", Value: host.Reference().Value}, nil
 }
 
 // Properties is a convenience method that wraps fetching the HostSystem MO
@@ -223,34 +223,25 @@ func HostStorageSystemProperties(hss *object.HostStorageSystem) (*mo.HostStorage
 }
 
 // GetHostStorageSystemPropertiesFromHost is util helper that grabs the storage system properties for given host
-func GetHostStorageSystemPropertiesFromHost(client *govmomi.Client, hostID string) (*mo.HostStorageSystem, error) {
-	hss, err := GetHostStorageSystemFromHost(client, hostID)
+func GetHostStorageSystemPropertiesFromHost(client *govmomi.Client, host *object.HostSystem) (*mo.HostStorageSystem, error) {
+	hss, err := GetHostStorageSystemFromHost(client, host)
 	if err != nil {
 		return nil, err
 	}
 
 	hssProps, err := HostStorageSystemProperties(hss)
 	if err != nil {
-		return nil, fmt.Errorf("error trying to retrieve host storage system properties for host '%s': %s", hostID, err)
+		return nil, fmt.Errorf("error trying to retrieve host storage system properties for host '%s': %s", host.Name(), err)
 	}
 
 	return hssProps, nil
 }
 
 // GetHostStorageSystemFromHost is util helper that grabs the storage system properties for given host
-func GetHostStorageSystemFromHost(client *govmomi.Client, hostID string) (*object.HostStorageSystem, error) {
-	hs, err := FromID(client, hostID)
+func GetHostStorageSystemFromHost(client *govmomi.Client, host *object.HostSystem) (*object.HostStorageSystem, error) {
+	hsProps, err := Properties(host)
 	if err != nil {
-		if viapi.IsManagedObjectNotFoundError(err) {
-			return nil, fmt.Errorf("could not find host with id '%s'", hostID)
-		}
-
-		return nil, fmt.Errorf("error while searching host '%s': %s", hostID, err)
-	}
-
-	hsProps, err := Properties(hs)
-	if err != nil {
-		return nil, fmt.Errorf("error trying to retrieve host system properties for host '%s': %s", hostID, err)
+		return nil, fmt.Errorf("error trying to retrieve host system properties for host '%s': %s", host.Name(), err)
 	}
 
 	return object.NewHostStorageSystem(client.Client, *hsProps.ConfigManager.StorageSystem), nil

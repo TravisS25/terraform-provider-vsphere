@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/iscsi"
 )
 
@@ -16,9 +17,15 @@ func dataSourceVSphereIscsiTarget() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"host_system_id": {
+				Type:         schema.TypeString,
+				Description:  "The host id to gather iscsi information",
+				Optional:     true,
+				ExactlyOneOf: []string{"hostname"},
+			},
+			"hostname": {
 				Type:        schema.TypeString,
-				Description: "The host to gather iscsi information",
-				Required:    true,
+				Description: "The hostname to gather iscsi information",
+				Optional:    true,
 			},
 			"adapter_id": {
 				Type:        schema.TypeString,
@@ -55,20 +62,21 @@ func dataSourceVSphereIscsiTarget() *schema.Resource {
 }
 
 func dataSourceVSphereIscsiTargetRead(d *schema.ResourceData, meta interface{}) error {
-	hostID := d.Get("host_system_id").(string)
+	client := meta.(*Client).vimClient
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host on iscsi data source read: %s", err)
+	}
+
 	adapterID := d.Get("adapter_id").(string)
 
-	err := iscsiTargetRead(
-		d,
-		meta,
-		hostID,
-		adapterID,
-		true,
-	)
+	if err = iscsiTargetRead(client, d, host, adapterID, true); err != nil {
+		return fmt.Errorf("error reading iscsi target properties on data source read for host '%s': %s", host.Name(), err)
+	}
 	if err != nil {
 		return err
 	}
 
-	d.SetId(fmt.Sprintf("%s:%s", hostID, adapterID))
+	d.SetId(fmt.Sprintf("%s:%s", hr.IDName, adapterID))
 	return nil
 }

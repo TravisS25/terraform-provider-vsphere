@@ -1,4 +1,8 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 3.1.1 (February 13, 2024)
+IMPROVEMENTS:
+* Added more id shims to resources
+
 ## 3.1.0 (February 6, 2024)
 FEATURES:
 * `resource/vsphere_vcenter_dns` : Adds ability to set vcenter dns servers

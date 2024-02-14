@@ -75,7 +75,7 @@ func resourceVSphereHostConfigSyslogRead(d *schema.ResourceData, meta interface{
 
 func resourceVSphereHostConfigSyslogCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	host, hostReturn, err := hostsystem.FromHostnameOrID(client, d)
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func resourceVSphereHostConfigSyslogCreate(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	d.SetId(hostReturn.Value)
+	d.SetId(hr.Value)
 
 	return nil
 }
@@ -125,7 +125,7 @@ func resourceVSphereHostConfigSyslogDelete(d *schema.ResourceData, meta interfac
 
 func resourceVSphereHostConfigSyslogImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	client := meta.(*Client).vimClient
-	host, hostReturn, err := hostsystem.CheckIfHostnameOrID(client, d.Id())
+	host, hr, err := hostsystem.CheckIfHostnameOrID(client, d.Id())
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +135,6 @@ func resourceVSphereHostConfigSyslogImport(ctx context.Context, d *schema.Resour
 	}
 
 	d.SetId(d.Id())
-	d.Set(hostReturn.IDName, hostReturn.Value)
+	d.Set(hr.IDName, hr.Value)
 	return []*schema.ResourceData{d}, nil
 }

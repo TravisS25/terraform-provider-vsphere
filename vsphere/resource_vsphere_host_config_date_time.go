@@ -12,6 +12,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -29,10 +31,17 @@ func resourceVSphereHostConfigDateTime() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"host_system_id": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ForceNew:     true,
+				Description:  "Host id of machine to configure ntp",
+				ExactlyOneOf: []string{"hostname"},
+			},
+			"hostname": {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 				ForceNew:    true,
-				Description: "Host id of machine to configure ntp",
+				Description: "Hostname of host system to configure ntp",
 			},
 			"ntp_servers": {
 				Type:        schema.TypeSet,
@@ -70,22 +79,26 @@ func resourceVSphereHostConfigDateTime() *schema.Resource {
 }
 
 func resourceVSphereHostConfigDateTimeRead(d *schema.ResourceData, meta interface{}) error {
-	hostID := d.Get("host_system_id").(string)
-	log.Printf("[INFO] reading date time configuration for host '%s'", hostID)
-	return hostConfigDateTimeRead(d, meta, hostID)
+	client := meta.(*Client).vimClient
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host for 'vsphere_host_config_date_time' on read: %s", err)
+	}
+
+	log.Printf("[INFO] reading date time configuration for host '%s'", host.Name())
+	return hostConfigDateTimeRead(client, d, host)
 }
 
 func resourceVSphereHostConfigDateTimeCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-	host, err := hostsystem.FromID(client, hostID)
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
-		return err
+		return fmt.Errorf("error retrieving host for 'vsphere_host_config_date_time' on create: %s", err)
 	}
 
 	hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
 	if err != nil {
-		return fmt.Errorf("error trying to get date time system object from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to get date time system object on create from host '%s': %s", host.Name(), err)
 	}
 
 	disableEvents := d.Get("disable_events").(bool)
@@ -112,33 +125,32 @@ func resourceVSphereHostConfigDateTimeCreate(d *schema.ResourceData, meta interf
 		}
 	}
 
-	log.Printf("[INFO] creating date time configuration for host '%s'", hostID)
+	log.Printf("[INFO] creating date time configuration for host '%s'", host.Name())
 
 	if err = hostDt.UpdateConfig(context.Background(), cfg); err != nil {
-		return fmt.Errorf("error trying to create date time configuration for host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to create date time configuration for host '%s': %s", host.Name(), err)
 	}
 
-	d.SetId(hostID)
+	d.SetId(hr.Value)
 
 	return nil
 }
 
 func resourceVSphereHostConfigDateTimeUpdate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-	host, err := hostsystem.FromID(client, hostID)
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
-		return err
+		return fmt.Errorf("error retrieving host for 'vsphere_host_config_date_time' on update: %s", err)
 	}
 
 	hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
 	if err != nil {
-		return fmt.Errorf("error trying to get date time system object from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to get date time system object on update from host '%s': %s", host.Name(), err)
 	}
 
 	var hostDtProps mo.HostDateTimeSystem
 	if err = hostDt.Properties(context.Background(), hostDt.Reference(), nil, &hostDtProps); err != nil {
-		return fmt.Errorf("error trying to gather date time properties from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to gather date time properties on update from host '%s': %s", host.Name(), err)
 	}
 
 	disableEvents := d.Get("disable_events").(bool)
@@ -168,10 +180,10 @@ func resourceVSphereHostConfigDateTimeUpdate(d *schema.ResourceData, meta interf
 		}
 	}
 
-	log.Printf("[INFO] updating date time configuration for host '%s'", hostID)
+	log.Printf("[INFO] updating date time configuration for host '%s'", host.Name())
 
 	if err = hostDt.UpdateConfig(context.Background(), cfg); err != nil {
-		return fmt.Errorf("error trying to update date time configuration for host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to update date time configuration for host '%s': %s", host.Name(), err)
 	}
 
 	return nil
@@ -179,40 +191,43 @@ func resourceVSphereHostConfigDateTimeUpdate(d *schema.ResourceData, meta interf
 
 func resourceVSphereHostConfigDateTimeDelete(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-	host, err := hostsystem.FromID(client, hostID)
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
-		return err
+		return fmt.Errorf("error retrieving host for 'vsphere_host_config_date_time' on delete: %s", err)
 	}
 
 	hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
 	if err != nil {
-		return fmt.Errorf("error trying to get date time system object from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to get date time system object from host '%s': %s", host.Name(), err)
 	}
 
-	log.Printf("[INFO] deleting date time configuration for host '%s'", hostID)
+	log.Printf("[INFO] deleting date time configuration for host '%s'", host.Name())
 
 	factoryDefaults := true
 	if err = hostDt.UpdateConfig(context.Background(), types.HostDateTimeConfig{
 		Protocol:               string(types.HostDateTimeInfoProtocolNtp),
 		ResetToFactoryDefaults: &factoryDefaults,
 	}); err != nil {
-		return fmt.Errorf("error trying to delete date time configuration for host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to delete date time configuration for host '%s': %s", host.Name(), err)
 	}
 
 	return nil
 }
 
 func resourceVSphereHostConfigDateTimeImport(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
-	hostID := d.Id()
-	log.Printf("[INFO] importing date time configuration for host '%s'", hostID)
-	err := hostConfigDateTimeRead(d, meta, hostID)
+	client := meta.(*Client).vimClient
+	host, hr, err := hostsystem.CheckIfHostnameOrID(client, d.Id())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error retrieving host for 'vsphere_host_config_date_time' on import: %s", err)
 	}
 
-	d.SetId(hostID)
-	d.Set("host_system_id", hostID)
+	log.Printf("[INFO] importing date time configuration for host '%s'", host.Name())
+	if err = hostConfigDateTimeRead(client, d, host); err != nil {
+		return nil, fmt.Errorf("error reading date time config on import for host '%s': %s", host.Name(), err)
+	}
+
+	d.SetId(hr.Value)
+	d.Set(hr.IDName, hr.Value)
 	return []*schema.ResourceData{d}, nil
 }
 
@@ -226,21 +241,15 @@ func resourceVSphereHostConfigDateTimeCustomDiff(ctx context.Context, rd *schema
 	return nil
 }
 
-func hostConfigDateTimeRead(d *schema.ResourceData, meta interface{}, hostID string) error {
-	client := meta.(*Client).vimClient
-	host, err := hostsystem.FromID(client, hostID)
-	if err != nil {
-		return err
-	}
-
+func hostConfigDateTimeRead(client *govmomi.Client, d *schema.ResourceData, host *object.HostSystem) error {
 	hostDt, err := host.ConfigManager().DateTimeSystem(context.Background())
 	if err != nil {
-		return fmt.Errorf("error trying to get date time system object from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to get date time system object from host '%s': %s", host.Name(), err)
 	}
 
 	var hostDtProps mo.HostDateTimeSystem
 	if err = hostDt.Properties(context.Background(), hostDt.Reference(), nil, &hostDtProps); err != nil {
-		return fmt.Errorf("error trying to gather date time properties from host '%s': %s", hostID, err)
+		return fmt.Errorf("error trying to gather date time properties from host '%s': %s", host.Name(), err)
 	}
 
 	d.Set("ntp_servers", hostDtProps.DateTimeInfo.NtpConfig.Server)

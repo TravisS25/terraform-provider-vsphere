@@ -20,18 +20,18 @@ import (
 // iscsi software adapter
 //
 // Returns error if iscsi software adapter can not be found (usually due to adapter not being enabled)
-func GetIscsiSoftwareAdater(hssProps *mo.HostStorageSystem, host string) (*types.HostInternetScsiHba, error) {
+func GetIscsiSoftwareAdater(hssProps *mo.HostStorageSystem, hostname string) (*types.HostInternetScsiHba, error) {
 	for _, v := range hssProps.StorageDeviceInfo.HostBusAdapter {
 		if strings.Contains(strings.ToLower(v.GetHostHostBusAdapter().Key), "internetscsihba") {
 			return v.(*types.HostInternetScsiHba), nil
 		}
 	}
 
-	return nil, fmt.Errorf("could not find iscsi software adapter for host '%s'", host)
+	return nil, fmt.Errorf("could not find iscsi software adapter for host '%s'", hostname)
 }
 
 // UpdateIscsiName is util helper that updates iscsi name for adapter
-func UpdateIscsiName(host, device, name string, c *govmomi.Client, hssProps types.ManagedObjectReference) error {
+func UpdateIscsiName(hostname, device, iscsiName string, c *govmomi.Client, hssProps types.ManagedObjectReference) error {
 	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
 	defer cancel()
 
@@ -39,18 +39,18 @@ func UpdateIscsiName(host, device, name string, c *govmomi.Client, hssProps type
 	_, err := methods.UpdateInternetScsiName(ctx, c, &types.UpdateInternetScsiName{
 		This:           hssProps.Reference(),
 		IScsiHbaDevice: device,
-		IScsiName:      name,
+		IScsiName:      iscsiName,
 	})
 
 	if err != nil {
-		return fmt.Errorf("could not update iscsi name for host '%s': %s", host, err)
+		return fmt.Errorf("could not update iscsi name for host '%s': %s", hostname, err)
 	}
 
 	return nil
 }
 
 // UpdateSoftwareInternetScsi is util helper that enables/disables the iscsi software adapter
-func UpdateSoftwareInternetScsi(client *govmomi.Client, ref types.ManagedObjectReference, host string, enabled bool) error {
+func UpdateSoftwareInternetScsi(client *govmomi.Client, ref types.ManagedObjectReference, hostname string, enabled bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
 	defer cancel()
 
@@ -68,9 +68,9 @@ func UpdateSoftwareInternetScsi(client *govmomi.Client, ref types.ManagedObjectR
 		msg := "error while trying to %s iscsi software adapter for host '%s': %s"
 
 		if enabled {
-			msg = fmt.Sprintf(msg, "enable", host, err)
+			msg = fmt.Sprintf(msg, "enable", hostname, err)
 		} else {
-			msg = fmt.Sprintf(msg, "disable", host, err)
+			msg = fmt.Sprintf(msg, "disable", hostname, err)
 		}
 		return fmt.Errorf(msg)
 	}
