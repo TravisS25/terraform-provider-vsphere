@@ -34,6 +34,11 @@ func dataSourceVSphereHostConfigSNMP() *schema.Resource {
 				Sensitive:   true,
 				Description: "Password of host.  Only required if using snmp v3",
 			},
+			"known_hosts_path": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "File path to 'known_hosts' file that will contain the hostname of esxi host.  Must be full path",
+			},
 			"ssh_port": {
 				Type:        schema.TypeInt,
 				Optional:    true,

@@ -19,6 +19,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/types"
+	"golang.org/x/crypto/ssh"
 )
 
 func resourceVSphereHostConfigSNMP() *schema.Resource {
@@ -66,6 +67,13 @@ func resourceVSphereHostConfigSNMP() *schema.Resource {
 				Optional:    true,
 				Sensitive:   true,
 				Description: "Password of host.  Only required if using snmp v3",
+			},
+			"known_hosts_path": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Description: `File path to 'known_hosts' file that must contain the hostname of esxi host.
+				This is used to verify a host against their current public ssh key.  Must be full path
+				`,
 			},
 			"ssh_port": {
 				Type:        schema.TypeInt,
@@ -190,7 +198,7 @@ func resourceVSphereHostConfigSNMPCreate(d *schema.ResourceData, meta interface{
 	}
 
 	if err = hostConfigSNMPUpdate(client, d, host, true); err != nil {
-		return fmt.Errorf("error updating snmp for host '%s': %s", host.Name(), err)
+		return fmt.Errorf("error updating snmp on host '%s': %s", host.Name(), err)
 	}
 
 	d.SetId(hr.Value)
@@ -277,6 +285,32 @@ func resourceVSphereHostConfigSNMPCustomDiff(ctx context.Context, rd *schema.Res
 	ap := rd.Get("authentication_protocol").(string)
 	pp := rd.Get("privacy_protocol").(string)
 	engineID := rd.Get("engine_id").(string)
+	knownHostsPath := rd.Get("known_hosts_path").(string)
+
+	if knownHostsPath != "" {
+		_, err := os.Stat(knownHostsPath)
+		if err != nil {
+			return fmt.Errorf("error with 'known_hosts_path' attribute: %s", err)
+		}
+
+		var tfID string
+		client := meta.(*Client).vimClient
+
+		if rd.Get("hostname").(string) != "" {
+			tfID = rd.Get("hostname").(string)
+		} else {
+			tfID = rd.Get("host_system_id").(string)
+		}
+
+		host, _, err := hostsystem.CheckIfHostnameOrID(client, tfID)
+		if err != nil {
+			return fmt.Errorf("error retrieving host during custom diff: %s", err)
+		}
+
+		if _, err = esxissh.GetKnownHostsOutput(knownHostsPath, host.Name()); err != nil {
+			return fmt.Errorf("error retrieving output to verify host '%s': %s", host.Name(), err)
+		}
+	}
 
 	if len(users) > 0 {
 		if engineID == "" {
@@ -299,26 +333,35 @@ func resourceVSphereHostConfigSNMPCustomDiff(ctx context.Context, rd *schema.Res
 }
 
 func hostConfigSNMPRead(client *govmomi.Client, d *schema.ResourceData, host *object.HostSystem) error {
-	err := startSSHForSNMP(client, host)
+	err := startSSHServiceForSNMP(client, host)
 	if err != nil {
-		return fmt.Errorf("error starting ssh service for host '%s': %s", host.Name(), err)
+		return fmt.Errorf("error starting ssh service on host '%s': %s", host.Name(), err)
+	}
+
+	cb := ssh.InsecureIgnoreHostKey()
+
+	if d.Get("known_hosts_path").(string) != "" {
+		cb = esxissh.GetDefaultHostKeyCallback(d.Get("known_hosts_path").(string))
 	}
 
 	result, err := esxissh.RunCommand(
 		"/bin/esxcli system snmp get",
 		host.Name(),
-		d.Get("user").(string),
-		d.Get("password").(string),
 		d.Get("ssh_port").(int),
-		d.Get("ssh_timeout").(int),
+		esxissh.GetDefaultClientConfig(
+			d.Get("user").(string),
+			d.Get("password").(string),
+			d.Get("ssh_timeout").(int),
+			cb,
+		),
 	)
 	if err != nil {
-		return fmt.Errorf("error executing esxcli user command for host '%s': %s", host.Name(), err)
+		return fmt.Errorf("error executing command to gather snmp settings host '%s': %s", host.Name(), err)
 	}
 
 	outBuf := bytes.Buffer{}
 	if _, err = outBuf.ReadFrom(result); err != nil {
-		return fmt.Errorf("error reading output result for host '%s': %s", host.Name(), err)
+		return fmt.Errorf("error reading output result on host '%s': %s", host.Name(), err)
 	}
 
 	for {
@@ -388,7 +431,7 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 	moHost, err := hostsystem.Properties(host)
 	if err != nil {
 		return fmt.Errorf(
-			"error retrieving host properties for host '%s': %s",
+			"error retrieving host properties on host '%s': %s",
 			host.Name(),
 			err,
 		)
@@ -406,9 +449,15 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 	enabled := true
 
 	if len(users) > 0 {
-		if err = startSSHForSNMP(client, host); err != nil {
-			return fmt.Errorf("error starting ssh service for host '%s': %s", host.Name(), err)
+		if err = startSSHServiceForSNMP(client, host); err != nil {
+			return fmt.Errorf("error starting ssh service on host '%s': %s", host.Name(), err)
 		}
+	}
+
+	cb := ssh.InsecureIgnoreHostKey()
+
+	if d.Get("known_hosts_path").(string) != "" {
+		cb = esxissh.GetDefaultHostKeyCallback(d.Get("known_hosts_path").(string))
 	}
 
 	if isUpdate {
@@ -479,7 +528,7 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 				},
 			},
 		); err != nil {
-			return fmt.Errorf("error reconfiguring snmp agent for host '%s': %s", host.Name(), err)
+			return fmt.Errorf("error reconfiguring snmp agent on host '%s': %s", host.Name(), err)
 		}
 
 		if len(users) > 0 {
@@ -510,32 +559,35 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 				if esxHashCmd != baseHashCmd {
 					esxHashCmd += " --raw-secret"
 
-					output, err := esxissh.RunCommand(
+					result, err := esxissh.RunCommand(
 						esxHashCmd,
 						host.Name(),
-						d.Get("user").(string),
-						d.Get("password").(string),
 						d.Get("ssh_port").(int),
-						d.Get("ssh_timeout").(int),
+						esxissh.GetDefaultClientConfig(
+							d.Get("user").(string),
+							d.Get("password").(string),
+							d.Get("ssh_timeout").(int),
+							cb,
+						),
 					)
 					if err != nil {
-						return fmt.Errorf("error running command on host '%s': %s", host.Name(), err)
+						return fmt.Errorf("error executing hash command on host '%s': %s", host.Name(), err)
 					}
 
-					if _, err = outBuf.ReadFrom(output); err != nil {
-						return fmt.Errorf("error reading stdout of esxcli hash command for host '%s': %s", host.Name(), err)
+					if _, err = outBuf.ReadFrom(result); err != nil {
+						return fmt.Errorf("error reading stdout of esxcli hash command on host '%s': %s", host.Name(), err)
 					}
 
 					authLine, err := outBuf.ReadString('\n')
 					if err != nil {
-						return fmt.Errorf("error reading stdout of esxcli hash command for host '%s': %s", host.Name(), err)
+						return fmt.Errorf("error reading stdout of esxcli hash command on host '%s': %s", host.Name(), err)
 					}
 
 					authHash := strings.TrimSpace(strings.Split(authLine, ":")[1])
 
 					privLine, err := outBuf.ReadString('\n')
 					if err != nil {
-						return fmt.Errorf("error reading stdout of esxcli hash command for host '%s': %s", host.Name(), err)
+						return fmt.Errorf("error reading stdout of esxcli hash command on host '%s': %s", host.Name(), err)
 					}
 
 					privHash := strings.TrimSpace(strings.Split(privLine, ":")[1])
@@ -560,12 +612,15 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 			if _, err = esxissh.RunCommand(
 				fmt.Sprintf("/bin/esxcli system snmp set --remote-users %s", setUserStr),
 				host.Name(),
-				d.Get("user").(string),
-				d.Get("password").(string),
 				d.Get("ssh_port").(int),
-				d.Get("ssh_timeout").(int),
+				esxissh.GetDefaultClientConfig(
+					d.Get("user").(string),
+					d.Get("password").(string),
+					d.Get("ssh_timeout").(int),
+					cb,
+				),
 			); err != nil {
-				return fmt.Errorf("error executing esxcli user command for host '%s': %s", host.Name(), err)
+				return fmt.Errorf("error executing esxcli user command on host '%s': %s", host.Name(), err)
 			}
 		}
 	} else {
@@ -577,8 +632,9 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 			&types.ReconfigureSnmpAgent{
 				This: *moHost.ConfigManager.SnmpSystem,
 				Spec: types.HostSnmpConfigSpec{
-					Enabled: &enabled,
-					Port:    161,
+					Enabled:             &enabled,
+					ReadOnlyCommunities: []string{"reset"},
+					Port:                161,
 					Option: []types.KeyValue{
 						{
 							Key:   "loglevel",
@@ -596,52 +652,45 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 				},
 			},
 		); err != nil {
-			return fmt.Errorf("error deleting snmp settings for host '%s': %s", host.Name(), err)
-		}
-
-		if _, err = esxissh.RunCommand(
-			"/bin/esxcli system snmp set -c 'reset'",
-			host.Name(),
-			d.Get("user").(string),
-			d.Get("password").(string),
-			d.Get("ssh_port").(int),
-			d.Get("ssh_timeout").(int),
-		); err != nil {
-			return fmt.Errorf("error executing esxcli community reset command for host '%s': %s", host.Name(), err)
+			return fmt.Errorf("error deleting snmp settings on host '%s': %s", host.Name(), err)
 		}
 
 		if _, err = esxissh.RunCommand(
 			"/bin/esxcli system snmp set --targets 'reset'",
 			host.Name(),
-			d.Get("user").(string),
-			d.Get("password").(string),
 			d.Get("ssh_port").(int),
-			d.Get("ssh_timeout").(int),
-		); err != nil {
-			return fmt.Errorf("error executing esxcli targets reset command for host '%s': %s", host.Name(), err)
-		}
-
-		if len(users) > 0 {
-			if _, err = esxissh.RunCommand(
-				"/bin/esxcli system snmp set --remote-users 'reset'",
-				host.Name(),
+			esxissh.GetDefaultClientConfig(
 				d.Get("user").(string),
 				d.Get("password").(string),
-				d.Get("ssh_port").(int),
 				d.Get("ssh_timeout").(int),
-			); err != nil {
-				return fmt.Errorf("error executing esxcli user reset command for host '%s': %s", host.Name(), err)
-			}
+				cb,
+			),
+		); err != nil {
+			return fmt.Errorf("error executing esxcli targets reset command on host '%s': %s", host.Name(), err)
+		}
+
+		if _, err = esxissh.RunCommand(
+			"/bin/esxcli system snmp set --remote-users 'reset'",
+			host.Name(),
+			d.Get("ssh_port").(int),
+			esxissh.GetDefaultClientConfig(
+				d.Get("user").(string),
+				d.Get("password").(string),
+				d.Get("ssh_timeout").(int),
+				cb,
+			),
+		); err != nil {
+			return fmt.Errorf("error executing esxcli remote user reset command on host '%s': %s", host.Name(), err)
 		}
 	}
 
 	return nil
 }
 
-func startSSHForSNMP(client *govmomi.Client, host *object.HostSystem) error {
+func startSSHServiceForSNMP(client *govmomi.Client, host *object.HostSystem) error {
 	hostServices, err := hostservicestate.GetHostServies(client, host, defaultAPITimeout)
 	if err != nil {
-		return fmt.Errorf("error retrieving host services on snmp update for host '%s': %s", host.Name(), err)
+		return fmt.Errorf("error retrieving host services on snmp update on host '%s': %s", host.Name(), err)
 	}
 
 	for _, srv := range hostServices {
@@ -656,7 +705,7 @@ func startSSHForSNMP(client *govmomi.Client, host *object.HostSystem) error {
 				defaultAPITimeout,
 				true,
 			); err != nil {
-				return fmt.Errorf("error starting ssh service while updating snmp for host '%s': %s", host.Name(), err)
+				return fmt.Errorf("error starting ssh service while updating snmp on host '%s': %s", host.Name(), err)
 			}
 		}
 	}

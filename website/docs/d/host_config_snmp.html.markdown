@@ -49,6 +49,7 @@ The following arguments are supported:
 * `hostname` - The hostname of the host we want to gather snmp info
 * `user` - The user of esxi host to login as through ssh
 * `password` - The user of esxi host to login as through ssh
+* `known_hosts_path` - File path to 'known_hosts' file that must contain the hostname of esxi host.  This is used to verify a host against their current public ssh key.  Must be full path
 * `ssh_port` - The port of esxi host to connect to through ssh
 * `ssh_timeout` - Number in seconds it should take to establish connection before timing out
 * `engine_id` - SNMPv3 engine id
