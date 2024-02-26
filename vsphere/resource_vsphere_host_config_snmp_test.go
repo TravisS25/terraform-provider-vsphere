@@ -28,8 +28,8 @@ func TestAccResourceVSphereHostConfigSNMP_basic(t *testing.T) {
 			"TF_VAR_VSPHERE_DATACENTER",
 			"TF_VAR_VSPHERE_CLUSTER",
 			"TF_VAR_VSPHERE_ESXI1",
-			"TF_VAR_VSPHERE_ESXI_USER",
-			"TF_VAR_VSPHERE_ESXI_PASSWORD",
+			"TF_VAR_VSPHERE_ESXI_SSH_USER",
+			"TF_VAR_VSPHERE_ESXI_SSH_PASSWORD",
 			"TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH",
 		},
 	)
@@ -38,13 +38,21 @@ func TestAccResourceVSphereHostConfigSNMP_basic(t *testing.T) {
 	community := "public"
 	newCommunity := "new_public"
 
-	_, err := os.OpenFile(os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.ModePerm)
+	_, err := os.OpenFile(
+		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+		os.ModePerm,
+	)
 	if err != nil {
 		t.Fatalf("unable to create file: %s", err)
 	}
-	defer os.Remove(os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"))
 
-	runKeyScanCommand(t)
+	if _, err = esxissh.GetKnownHostsOutput(
+		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+	); err != nil && err == esxissh.ErrHostNotFound {
+		runKeyScanCommand(t, os.Getenv("TF_VAR_VSPHERE_ESXI1"))
+	}
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -82,8 +90,8 @@ func TestAccResourceVSphereHostConfigSNMP_hostname(t *testing.T) {
 			"TF_VAR_VSPHERE_DATACENTER",
 			"TF_VAR_VSPHERE_CLUSTER",
 			"TF_VAR_VSPHERE_ESXI1",
-			"TF_VAR_VSPHERE_ESXI_USER",
-			"TF_VAR_VSPHERE_ESXI_PASSWORD",
+			"TF_VAR_VSPHERE_ESXI_SSH_USER",
+			"TF_VAR_VSPHERE_ESXI_SSH_PASSWORD",
 			"TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH",
 		},
 	)
@@ -92,13 +100,21 @@ func TestAccResourceVSphereHostConfigSNMP_hostname(t *testing.T) {
 	community := "public"
 	newCommunity := "new_public"
 
-	_, err := os.OpenFile(os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.ModePerm)
+	_, err := os.OpenFile(
+		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+		os.ModePerm,
+	)
 	if err != nil {
 		t.Fatalf("unable to create file: %s", err)
 	}
-	defer os.Remove(os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"))
 
-	runKeyScanCommand(t)
+	if _, err = esxissh.GetKnownHostsOutput(
+		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+	); err != nil && err == esxissh.ErrHostNotFound {
+		runKeyScanCommand(t, os.Getenv("TF_VAR_VSPHERE_ESXI1"))
+	}
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -266,8 +282,8 @@ func testAccResourceVSphereHostConfigSNMPConfig(community string, useHostname bo
 				testhelper.ConfigDataRootHost1(),
 			),
 			"hostname = data.vsphere_host.roothost1.name",
-			os.Getenv("TF_VAR_VSPHERE_ESXI_USER"),
-			os.Getenv("TF_VAR_VSPHERE_ESXI_PASSWORD"),
+			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
+			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
 			os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
 			community,
 		)
@@ -281,8 +297,8 @@ func testAccResourceVSphereHostConfigSNMPConfig(community string, useHostname bo
 			testhelper.ConfigDataRootHost1(),
 		),
 		"host_system_id = data.vsphere_host.roothost1.id",
-		os.Getenv("TF_VAR_VSPHERE_ESXI_USER"),
-		os.Getenv("TF_VAR_VSPHERE_ESXI_PASSWORD"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
 		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
 		community,
 	)
@@ -320,8 +336,8 @@ func getTestCommandOutput(id string) (*bytes.Buffer, error) {
 		host.Name(),
 		port,
 		esxissh.GetDefaultClientConfig(
-			os.Getenv("TF_VAR_VSPHERE_ESXI_USER"),
-			os.Getenv("TF_VAR_VSPHERE_ESXI_PASSWORD"),
+			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
+			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
 			timeout,
 			ssh.InsecureIgnoreHostKey(),
 		),
@@ -338,13 +354,13 @@ func getTestCommandOutput(id string) (*bytes.Buffer, error) {
 	return &outBuf, nil
 }
 
-func runKeyScanCommand(t *testing.T) {
+func runKeyScanCommand(t *testing.T, hostname string) {
 	stdOut := &bytes.Buffer{}
 	stdErr := &bytes.Buffer{}
 	cmd := exec.Command(
 		"sh",
 		"-c",
-		fmt.Sprintf("ssh-keyscan -H %s >> %s", os.Getenv("TF_VAR_VSPHERE_ESXI1"), os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH")),
+		fmt.Sprintf("ssh-keyscan -H %s >> %s", hostname, os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH")),
 	)
 	cmd.Stdout = stdOut
 	cmd.Stderr = stdErr
@@ -355,7 +371,7 @@ func runKeyScanCommand(t *testing.T) {
 			t.Fatalf("error running 'ssh-keyscan' command: %s", stdErr.String())
 		}
 		if stdOut.String() == "" {
-			t.Fatalf(fmt.Sprintf("given hostname '%s' was not found in given known_hosts file", os.Getenv("TF_VAR_VSPHERE_ESXI1")))
+			t.Fatalf(fmt.Sprintf("given hostname '%s' was not found in given known_hosts file", hostname))
 		}
 	}
 }

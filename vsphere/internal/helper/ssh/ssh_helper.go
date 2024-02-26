@@ -3,6 +3,7 @@ package ssh
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,8 +14,12 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+var (
+	ErrHostNotFound = errors.New("hostname not found in given 'known_hosts' file")
+)
+
 // RunCommand will execute arbitrary command against host and port with passed client config
-func RunCommand(cmd, host string, port int, sshCfg *ssh.ClientConfig) (io.Reader, error) {
+func RunCommand(cmd, host string, port int, sshCfg *ssh.ClientConfig) (*bytes.Buffer, error) {
 	sshClient, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", host, port), sshCfg)
 	if err != nil {
 		return nil, fmt.Errorf("error creating ssh client for host '%s': %s", host, err)
@@ -28,10 +33,12 @@ func RunCommand(cmd, host string, port int, sshCfg *ssh.ClientConfig) (io.Reader
 	defer session.Close()
 
 	stdOut := &bytes.Buffer{}
+	stdErr := &bytes.Buffer{}
 	session.Stdout = stdOut
+	session.Stderr = stdErr
 
 	if err = session.Run(cmd); err != nil {
-		return nil, fmt.Errorf("error executing command '%s' for host '%s': %s", cmd, host, err)
+		return nil, fmt.Errorf("error executing command '%s' for host '%s': %s:%s", cmd, host, err, stdErr.String())
 	}
 
 	return stdOut, nil
@@ -112,7 +119,7 @@ func GetKnownHostsOutput(knownHostsFilePath, hostname string) (*bytes.Buffer, er
 			return nil, fmt.Errorf("error running 'ssh-keygen' command: %s", stdErr.String())
 		}
 		if stdOut.String() == "" {
-			return nil, fmt.Errorf(fmt.Sprintf("given hostname '%s' was not found in given known_hosts file", hostname))
+			return nil, ErrHostNotFound
 		}
 	}
 
