@@ -156,6 +156,7 @@ func Provider() *schema.Provider {
 			"vsphere_iscsi_target":                            resourceVSphereIscsiTarget(),
 			"vsphere_host_config_date_time":                   resourceVSphereHostConfigDateTime(),
 			"vsphere_host_config_syslog":                      resourceVSphereHostConfigSyslog(),
+			"vsphere_host_config_snmp":                        resourceVSphereHostConfigSNMP(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -192,6 +193,7 @@ func Provider() *schema.Provider {
 			"vsphere_host_config_date_time":      dataSourceVSphereHostConfigDateTime(),
 			"vsphere_host_config_syslog":         dataSourceVSphereHostConfigSyslog(),
 			"vsphere_host_list":                  dataSourceVSphereHostList(),
+			"vsphere_host_config_snmp":           dataSourceVSphereHostConfigSNMP(),
 		},
 
 		ConfigureFunc: providerConfigure,
