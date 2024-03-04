@@ -29,6 +29,12 @@ func resourceVSphereVcenterDNS() *schema.Resource {
 		},
 
 		Schema: map[string]*schema.Schema{
+			"soft_delete": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Default:     true,
+				Description: "If set, will skip actually deleting resource and will simply be removed from state",
+			},
 			"servers": {
 				Type:        schema.TypeSet,
 				Required:    true,
@@ -62,18 +68,20 @@ func resourceVSphereVcenterDNSDelete(d *schema.ResourceData, meta interface{}) e
 
 	client := meta.(*Client).restClient
 
-	if err = viapi.RestUpdateRequest(
-		client,
-		http.MethodPut,
-		dnsServersPath,
-		map[string]interface{}{
-			"config": map[string]interface{}{
-				"mode":    "is_static",
-				"servers": []interface{}{},
+	if !d.Get("soft_delete").(bool) {
+		if err = viapi.RestUpdateRequest(
+			client,
+			http.MethodPut,
+			dnsServersPath,
+			map[string]interface{}{
+				"config": map[string]interface{}{
+					"mode":    "is_static",
+					"servers": []interface{}{},
+				},
 			},
-		},
-	); err != nil {
-		return fmt.Errorf("error deleting dns server config: %s", err)
+		); err != nil {
+			return fmt.Errorf("error deleting dns server config: %s", err)
+		}
 	}
 
 	return nil
@@ -86,6 +94,7 @@ func resourceVSphereVcenterDNSImport(ctx context.Context, d *schema.ResourceData
 	}
 
 	d.SetId(vsphereVcenterDnsID)
+	d.Set("soft_delete", true)
 	return []*schema.ResourceData{d}, nil
 }
 
