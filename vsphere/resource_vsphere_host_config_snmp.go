@@ -170,7 +170,7 @@ func resourceVSphereHostConfigSNMP() *schema.Resource {
 						"hostname": {
 							Type:        schema.TypeString,
 							Required:    true,
-							Description: "IP of receiver for notifications from host",
+							Description: "Hostname of receiver for notifications from host",
 						},
 						"port": {
 							Type:        schema.TypeInt,
