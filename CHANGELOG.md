@@ -1,4 +1,12 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 3.3.0 (March 04, 2024)
+FEATURES:
+* `resource/vsphere_vcenter_snmp` : Adds ability to enable snmp settings for vcenter host
+* `datasource/vsphere_vcenter_snmp` : Adds ability to query snmp setings from vcenter host
+
+BUG FIXES:
+* Fixed edge case bug with rest request helper
+
 ## 3.2.0 (February 22, 2024)
 FEATURES:
 * `resource/vsphere_host_config_snmp` : Adds ability to enable snmp settings for esxi host
