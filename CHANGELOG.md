@@ -1,4 +1,8 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 3.4.0 (March 05, 2024)
+FEATURES:
+* `resource/vsphere_host_config_dns` : Adds ability to set dns settings for esxi hosts
+
 ## 3.3.1 (March 05, 2024)
 IMPROVEMENTS:
 * Added soft delete option for vcenter dns so when deleting the vcenter dns resource, it doesn't
