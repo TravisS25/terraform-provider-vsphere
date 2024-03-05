@@ -11,7 +11,7 @@ description: |-
 
 Allows user to manage the DNS settings on ESXi hosts. This includes:
 * Hostname of the system
-* Domain name of the system (to complete the fqdn of the system using `Hostname`+`Domain name`
+* Domain name of the system to complete the fqdn of the system using `Hostname`+`Domain name`
 * DNS servers used for name resolution
 * Search domains
 
@@ -49,7 +49,8 @@ resource "vsphere_host_config_dns" "dns" {
 The following arguments are supported:
 * `host_system_id` - (Required) ESXi host ID of the host you want to configure DNS on.
 * `hostname` - (Required) Hostname of the system. NOT a fqdn.
-* `domain_name` - (Required) Domain name of the system (to complete the fqdn of the system using `hostname`+`domain_name`.
+* `soft_delete` - (Optional/Default: true) Determines whether to soft delete the resource.  The reason for this is that if you actually delete all dns servers configured for esxi host, things break by not being able to resolve hostnames.  This option allows users to have both the traditional delete and also a soft delete.
+* `domain_name` - (Required) Domain name of the system to complete the fqdn of the system using `hostname`+`domain_name`.
 * `dns_servers` - (Required) The DNS servers used for name resolution.
 * `search_domains` - (Required) Search domains used for hostname resolution.
 

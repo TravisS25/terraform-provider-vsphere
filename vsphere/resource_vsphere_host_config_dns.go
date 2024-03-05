@@ -10,16 +10,19 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
 func resourceVSphereHostConfigDNS() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceVSphereHostConfigDNSCreate,
-		Read:   resourceVSphereHostConfigDNSRead,
-		Update: resourceVSphereHostConfigDNSUpdate,
-		Delete: resourceVSphereHostConfigDNSDelete,
+		Create:        resourceVSphereHostConfigDNSCreate,
+		Read:          resourceVSphereHostConfigDNSRead,
+		Update:        resourceVSphereHostConfigDNSUpdate,
+		Delete:        resourceVSphereHostConfigDNSDelete,
+		CustomizeDiff: resourceVSphereHostConfigDNSCustomDiff,
 		Importer: &schema.ResourceImporter{
 			State: resourceVSphereHostConfigDNSImport,
 		},
@@ -35,26 +38,27 @@ func resourceVSphereHostConfigDNS() *schema.Resource {
 				Optional: true,
 				ForceNew: true,
 			},
+			"soft_delete": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
 			"dns_hostname": {
 				Type:     schema.TypeString,
 				Required: true,
-				ForceNew: false,
 			},
 			"dns_servers": {
 				Type:     schema.TypeSet,
 				Required: true,
-				ForceNew: false,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 			"domain_name": {
 				Type:     schema.TypeString,
 				Required: true,
-				ForceNew: false,
 			},
 			"search_domains": {
 				Type:     schema.TypeSet,
 				Required: true,
-				ForceNew: false,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 		},
@@ -62,163 +66,150 @@ func resourceVSphereHostConfigDNS() *schema.Resource {
 }
 
 func resourceVSphereHostConfigDNSCreate(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client).vimClient
-	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
-	defer cancel()
-
-	// TODO: maybe we can move this to a ValidateFunc on the argument list above so "tf plan" catches it and you don't have to wait for a "TF apply" to see the error
-	if strings.Contains(d.Get("dns_hostname").(string), ".") {
-		return fmt.Errorf("create func - Invalid hostname supplied. Should not be FQDN")
-	}
-
-	host, hostID, err := hostsystem.FromHostnameOrID(c, d)
+	client := meta.(*Client).vimClient
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
-		return fmt.Errorf("create func - error getting host ID FromHostnameOrID")
+		return fmt.Errorf("error retrieving host on create: %s", err)
 	}
 
-	hns, err := hostNetworkSystemFromHostSystemID(c, host.Reference().Value)
-	if err != nil {
-		return fmt.Errorf("create func - error getting host network system: %s", err)
+	if err = hostConfigDNSUpdate(client, d, host); err != nil {
+		return fmt.Errorf("error creating dns settings on host '%s': %s", host.Name(), err)
 	}
 
-	holder_dns_servers := []string{}
-	for _, v := range d.Get("dns_servers").(*schema.Set).List() {
-		holder_dns_servers = append(holder_dns_servers, v.(string))
-	}
-
-	holder_search_domains := []string{}
-	for _, v := range d.Get("search_domains").(*schema.Set).List() {
-		holder_search_domains = append(holder_search_domains, v.(string))
-	}
-
-	host_dns_config := &types.HostDnsConfig{
-		Dhcp:         false,
-		HostName:     d.Get("dns_hostname").(string),
-		DomainName:   d.Get("domain_name").(string),
-		Address:      holder_dns_servers,
-		SearchDomain: holder_search_domains,
-	}
-
-	err = hns.UpdateDnsConfig(ctx, host_dns_config)
-	if err != nil {
-		return fmt.Errorf("create func - error updating dns config: %s", err)
-	}
-
-	// add the resource into the terraform state
-	d.SetId(hostID.Value)
-
-	return resourceVSphereHostConfigDNSRead(d, meta)
+	d.SetId(hr.Value)
+	return nil
 }
 
 func resourceVSphereHostConfigDNSRead(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(*Client).vimClient
-	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
-	defer cancel()
-
-	host, _, err := hostsystem.FromHostnameOrID(c, d)
+	client := meta.(*Client).vimClient
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
-		return fmt.Errorf("read func - error getting host ID FromHostnameOrID. Err: %s", err)
+		return fmt.Errorf("error retrieving host on read: %s", err)
 	}
-
-	hns, err := hostNetworkSystemFromHostSystemID(c, host.Reference().Value)
-	if err != nil {
-		return fmt.Errorf("read func - error getting host network system: %s - %s - %s", err, host.Name(), host.Reference().Value)
-	}
-
-	var hostNetworkProps mo.HostNetworkSystem
-	err = hns.Properties(ctx, hns.Reference(), nil, &hostNetworkProps)
-	if err != nil {
-		fmt.Printf("read func - had an error getting the network system properties: %s", err)
-	}
-
-	dns_config := hostNetworkProps.DnsConfig.GetHostDnsConfig()
-	d.Set("dns_hostname", dns_config.HostName)
-	d.Set("dns_servers", dns_config.Address)
-	d.Set("search_domains", dns_config.SearchDomain)
-	d.Set("domain_name", dns_config.DomainName)
-
-	return nil
+	return hostConfigDNSRead(client, d, host)
 }
 
 func resourceVSphereHostConfigDNSUpdate(d *schema.ResourceData, meta interface{}) error {
+	client := meta.(*Client).vimClient
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host on create: %s", err)
+	}
 
-	if d.HasChanges("dns_hostname", "dns_servers", "search_domains", "domain_name") {
-		c := meta.(*Client).vimClient
+	if err = hostConfigDNSUpdate(client, d, host); err != nil {
+		return fmt.Errorf("error updating dns settings on host '%s': %s", host.Name(), err)
+	}
+
+	return nil
+}
+
+func resourceVSphereHostConfigDNSDelete(d *schema.ResourceData, meta interface{}) error {
+	if !d.Get("soft_delete").(bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 		defer cancel()
 
-		host, _, err := hostsystem.FromHostnameOrID(c, d)
+		client := meta.(*Client).vimClient
+		host, _, err := hostsystem.FromHostnameOrID(client, d)
 		if err != nil {
-			return fmt.Errorf("update func - error getting host ID FromHostnameOrID")
+			return fmt.Errorf("error retrieving host on delete: %s", err)
 		}
 
-		hns, err := hostNetworkSystemFromHostSystemID(c, host.Reference().Value)
+		hns, err := hostNetworkSystemFromHostSystemID(client, host.Reference().Value)
 		if err != nil {
-			return fmt.Errorf("update func - error getting host network system: %s", err)
+			return fmt.Errorf("error retrieving host network system on host '%s': %s", host.Name(), err)
 		}
 
-		holder_dns_servers := []string{}
-		for _, v := range d.Get("dns_servers").(*schema.Set).List() {
-			holder_dns_servers = append(holder_dns_servers, v.(string))
-		}
-
-		holder_search_domains := []string{}
-		for _, v := range d.Get("search_domains").(*schema.Set).List() {
-			holder_search_domains = append(holder_search_domains, v.(string))
-		}
-
-		host_dns_config := &types.HostDnsConfig{
-			Dhcp:         false,
-			HostName:     d.Get("dns_hostname").(string),
-			DomainName:   d.Get("domain_name").(string),
-			Address:      holder_dns_servers,
-			SearchDomain: holder_search_domains,
-		}
-
-		err = hns.UpdateDnsConfig(ctx, host_dns_config)
-		if err != nil {
-			return fmt.Errorf("update func - error updating dns config: %s", err)
+		if err = hns.UpdateDnsConfig(
+			ctx,
+			&types.HostDnsConfig{
+				Dhcp:         false,
+				HostName:     d.Get("dns_hostname").(string),
+				DomainName:   "",
+				Address:      []string{},
+				SearchDomain: []string{},
+			},
+		); err != nil {
+			return fmt.Errorf("error updating dns config: %s", err)
 		}
 	}
 
 	return nil
 }
 
-// We do not want to completely remove the DNS settings from the host so if TF performs a delete we just want to leave the host as-is
-func resourceVSphereHostConfigDNSDelete(d *schema.ResourceData, meta interface{}) error {
+func resourceVSphereHostConfigDNSCustomDiff(ctx context.Context, rd *schema.ResourceDiff, meta interface{}) error {
+	if strings.Contains(rd.Get("dns_hostname").(string), ".") {
+		return fmt.Errorf("'dns_hostname' should simply be the hostname itself, NOT a FQDN")
+	}
+
 	return nil
 }
 
 func resourceVSphereHostConfigDNSImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
-	c := meta.(*Client).vimClient
+	client := meta.(*Client).vimClient
+	_, hr, err := hostsystem.CheckIfHostnameOrID(client, d.Id())
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving host on import: %s", err)
+	}
 
+	d.SetId(hr.Value)
+	d.Set(hr.IDName, hr.Value)
+	d.Set("soft_delete", true)
+	return []*schema.ResourceData{d}, nil
+}
+
+func hostConfigDNSRead(client *govmomi.Client, d *schema.ResourceData, host *object.HostSystem) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 	defer cancel()
 
-	host, tfID, err := hostsystem.CheckIfHostnameOrID(c, d.Id())
+	hns, err := hostNetworkSystemFromHostSystemID(client, host.Reference().Value)
 	if err != nil {
-		return nil, fmt.Errorf("import func - error getting host ID FromHostnameOrID")
-	}
-
-	hns, err := hostNetworkSystemFromHostSystemID(c, host.Reference().Value)
-	if err != nil {
-		return nil, fmt.Errorf("import func - error getting host network system: %s", err)
+		return fmt.Errorf("error retrieving host network system from host '%s': %s", host.Name(), err)
 	}
 
 	var hostNetworkProps mo.HostNetworkSystem
-	err = hns.Properties(ctx, hns.Reference(), nil, &hostNetworkProps)
-	if err != nil {
-		return nil, fmt.Errorf("import func - had an error getting the network system properties: %s", err)
+	if err = hns.Properties(ctx, hns.Reference(), nil, &hostNetworkProps); err != nil {
+		fmt.Printf("error retrieving network system properties from host '%s': %s", host.Name(), err)
 	}
 
-	dns_config := hostNetworkProps.DnsConfig.GetHostDnsConfig()
+	dnsCfg := hostNetworkProps.DnsConfig.GetHostDnsConfig()
+	d.Set("dns_hostname", dnsCfg.HostName)
+	d.Set("dns_servers", dnsCfg.Address)
+	d.Set("search_domains", dnsCfg.SearchDomain)
+	d.Set("domain_name", dnsCfg.DomainName)
+	return nil
+}
 
-	d.SetId(d.Id())
-	d.Set(tfID.IDName, tfID.Value)
-	d.Set("dns_hostname", dns_config.HostName)
-	d.Set("dns_servers", dns_config.Address)
-	d.Set("search_domains", dns_config.SearchDomain)
-	d.Set("domain_name", dns_config.DomainName)
+func hostConfigDNSUpdate(client *govmomi.Client, d *schema.ResourceData, host *object.HostSystem) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
 
-	return []*schema.ResourceData{d}, nil
+	hns, err := hostNetworkSystemFromHostSystemID(client, host.Reference().Value)
+	if err != nil {
+		return fmt.Errorf("error retrieving host network system on host '%s': %s", host.Name(), err)
+	}
+
+	dnsServers := []string{}
+	for _, v := range d.Get("dns_servers").(*schema.Set).List() {
+		dnsServers = append(dnsServers, v.(string))
+	}
+
+	searchDomains := []string{}
+	for _, v := range d.Get("search_domains").(*schema.Set).List() {
+		searchDomains = append(searchDomains, v.(string))
+	}
+
+	if err = hns.UpdateDnsConfig(
+		ctx,
+		&types.HostDnsConfig{
+			Dhcp:         false,
+			HostName:     d.Get("dns_hostname").(string),
+			DomainName:   d.Get("domain_name").(string),
+			Address:      dnsServers,
+			SearchDomain: searchDomains,
+		},
+	); err != nil {
+		return fmt.Errorf("error updating dns config: %s", err)
+	}
+
+	return nil
 }
