@@ -21,7 +21,7 @@ For an overview on vSphere networking concepts, see [the product documentation][
 
 ## Example Usages
 
-**Create a Virtual Switch and Bind a Port Group:**
+**Create a Virtual Switch and Bind a Port Group using hostname:**
 
 ```hcl
 data "vsphere_datacenter" "datacenter" {
@@ -45,7 +45,7 @@ resource "vsphere_host_virtual_switch" "host_virtual_switch" {
 
 resource "vsphere_host_port_group" "pg" {
   name                = "portgroup-01"
-  host_system_id      = data.vsphere_host.host.id
+  hostname            = data.vsphere_host.host.hostname
   virtual_switch_name = vsphere_host_virtual_switch.host_virtual_switch.name
 }
 ```
@@ -95,7 +95,9 @@ The following arguments are supported:
 
 * `name` - (Required) The name of the port group.  Forces a new resource if
   changed.
-* `host_system_id` - (Required) The [managed object ID][docs-about-morefs] of
+* `host_system_id` - (Required/Optional) The [managed object ID][docs-about-morefs] of
+  the host to set the port group up on. Forces a new resource if changed.
+* `hostname` - (Required/Optional) The hostname of
   the host to set the port group up on. Forces a new resource if changed.
 * `virtual_switch_name` - (Required) The name of the virtual switch to bind
   this port group to. Forces a new resource if changed.
@@ -103,6 +105,8 @@ The following arguments are supported:
   `0` denotes no tagging, an ID of `1`-`4094` tags with the specific ID, and an
   ID of `4095` enables trunk mode, allowing the guest to manage its own
   tagging. Default: `0`.
+
+~> **NOTE:** Must choose either `host_system_id` or `hostname` but not both
 
 [docs-about-morefs]: /docs/providers/vsphere/index.html#use-of-managed-object-references-by-the-vsphere-provider
 
@@ -146,3 +150,9 @@ terraform import vsphere_host_port_group.management tf-HostPortGroup:host-123:ma
 ```
 
 The above would import the `management` host port group from host with ID `host-123`.
+
+You can also import using the host's hostname if the `hostname` attribute was set
+
+```
+terraform import vsphere_host_port_group.management tf-HostPortGroup:host.example.com:management
+```

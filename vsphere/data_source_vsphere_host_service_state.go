@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostservicestate"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
 )
 
@@ -18,9 +19,15 @@ func dataSourceVSphereHostServiceState() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"host_system_id": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  "Host id of machine to gather service info",
+				ExactlyOneOf: []string{"hostname"},
+			},
+			"hostname": {
 				Type:        schema.TypeString,
-				Required:    true,
-				Description: "Host id of machine",
+				Optional:    true,
+				Description: "Hostname of machine to gather service info",
 			},
 			"service": {
 				Type:        schema.TypeList,
@@ -54,10 +61,14 @@ func dataSourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interfac
 	log.Printf("[DEBUG] entering data_source_vsphere_host_service_state read function")
 
 	client := meta.(*Client).vimClient
-	hostID := d.Get("host_system_id").(string)
-	hsList, err := hostservicestate.GetHostServies(client, hostID, provider.DefaultAPITimeout)
+	host, hr, err := hostsystem.FromHostnameOrID(client, d)
 	if err != nil {
-		return fmt.Errorf("error retrieving host services for host '%s': %s", hostID, err)
+		return err
+	}
+
+	hsList, err := hostservicestate.GetHostServies(client, host, provider.DefaultAPITimeout)
+	if err != nil {
+		return fmt.Errorf("error retrieving host services for host '%s': %s", host.Name(), err)
 	}
 
 	srvList := make([]interface{}, 0, len(hsList))
@@ -80,8 +91,8 @@ func dataSourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interfac
 		}
 	}
 
-	d.SetId(hostID)
-	d.Set("host_system_id", hostID)
+	d.SetId(hr.Value)
+	d.Set(hr.IDName, hr.Value)
 	d.Set("service", srvList)
 
 	return nil

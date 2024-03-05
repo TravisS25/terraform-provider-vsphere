@@ -22,17 +22,26 @@ data "vsphere_host_service_state" "host" {
 }
 ```
 
+ **Using hostname**
+
+```hcl
+data "vsphere_host_service_state" "host" {
+  hostname = "host.example.com"
+}
+```
+
 ## Argument Reference
 
 The following arguments are supported:
 
-* `host_system_id` - (Required) The id of the host we want to gather service info from.
-
+* `host_system_id` - (Required/Optional) The id of the host we want to gather service info from.
+* `hostname` - (Required/Optional) The hostname of the host we want to gather service info from.
 
 ## Attribute Reference
 
-* `id` - Same as `host_system_id`
+* `id` - Same as `host_system_id` or `hostname`
 * `host_system_id` - The id of the host we want to gather service info
+* `hostname` - The hostname of the host we want to gather service info
 * `service` - List of all of the host services from given host
     * `key`     - The key of current service
     * `running` - Boolean that indicates whether the current service is running

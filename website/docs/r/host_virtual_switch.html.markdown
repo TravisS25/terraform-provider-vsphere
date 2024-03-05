@@ -22,7 +22,7 @@ page][ref-vsphere-net-concepts].
 
 ## Example Usages
 
-**Create a virtual switch with one active and one standby NIC:**
+**Create a virtual switch with one active and one standby NIC using host_system_id:**
 
 ```hcl
 data "vsphere_datacenter" "datacenter" {
@@ -37,6 +37,29 @@ data "vsphere_host" "host" {
 resource "vsphere_host_virtual_switch" "switch" {
   name           = "vSwitchTerraformTest"
   host_system_id = "${data.vsphere_host.host.id}"
+
+  network_adapters = ["vmnic0", "vmnic1"]
+
+  active_nics  = ["vmnic0"]
+  standby_nics = ["vmnic1"]
+}
+```
+
+**Using hostname:**
+
+```hcl
+data "vsphere_datacenter" "datacenter" {
+  name = "dc1"
+}
+
+data "vsphere_host" "host" {
+  name          = "esxi1"
+  datacenter_id = "${data.vsphere_datacenter.datacenter.id}"
+}
+
+resource "vsphere_host_virtual_switch" "switch" {
+  name           = "vSwitchTerraformTest"
+  hostname       = "${data.vsphere_host.host.hostname}"
 
   network_adapters = ["vmnic0", "vmnic1"]
 
@@ -84,7 +107,9 @@ The following arguments are supported:
 
 * `name` - (Required) The name of the virtual switch. Forces a new resource if
   changed.
-* `host_system_id` - (Required) The [managed object ID][docs-about-morefs] of
+* `host_system_id` - (Required/Optional) The [managed object ID][docs-about-morefs] of
+  the host to set the virtual switch up on. Forces a new resource if changed.
+* `hostname` - (Required/Optional) The hostname of
   the host to set the virtual switch up on. Forces a new resource if changed.
 * `mtu` - (Optional) The maximum transmission unit (MTU) for the virtual
   switch. Default: `1500`.
@@ -95,6 +120,8 @@ The following arguments are supported:
 
 ~> **NOTE:** Changing the port count requires a reboot of the host. Terraform
 will not restart the host for you.
+
+~> **NOTE:** Must choose either `host_system_id` or `hostname` but not both
 
 ### Bridge Options
 
@@ -191,3 +218,9 @@ terraform import vsphere_host_virtual_switch.switch tf-HostVirtualSwitch:host-10
 
 The above would import the vSwtich named `vSwitchTerraformTest` that is located in the `host-10`
 vSphere host.
+
+You can also import using the host's hostname if the `hostname` attribute was set
+
+```
+terraform import vsphere_host_virtual_switch.switch tf-HostVirtualSwitch:host.example.com:vSwitchTerraformTest
+```

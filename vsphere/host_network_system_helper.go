@@ -25,7 +25,7 @@ func hostNetworkSystemFromHostSystem(hs *object.HostSystem) (*object.HostNetwork
 // hostNetworkSystemFromHostSystemID locates a HostNetworkSystem from a
 // specified HostSystem managed object ID.
 func hostNetworkSystemFromHostSystemID(client *govmomi.Client, hsID string) (*object.HostNetworkSystem, error) {
-	hs, err := hostsystem.FromID(client, hsID)
+	hs, _, err := hostsystem.CheckIfHostnameOrID(client, hsID)
 	if err != nil {
 		return nil, err
 	}

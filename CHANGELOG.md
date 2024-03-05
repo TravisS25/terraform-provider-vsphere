@@ -1,4 +1,34 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 3.2.0 (February 22, 2024)
+FEATURES:
+* `resource/vsphere_host_config_snmp` : Adds ability to enable snmp settings for esxi host
+* `datasource/vsphere_host_config_snmp` : Adds ability to query snmp setings from esxi host
+
+## 3.1.1 (February 13, 2024)
+IMPROVEMENTS:
+* Added more id shims to resources
+
+## 3.1.0 (February 6, 2024)
+FEATURES:
+* `resource/vsphere_vcenter_dns` : Adds ability to set vcenter dns servers
+* `resource/vsphere_vcenter_syslog` : Adds ability to set vcenter syslog servers
+
+* `datasource/vsphere_vcenter_dns` : Adds ability to query for vcenter dns servers
+* `datasource/vsphere_vcenter_syslog` : Adds ability to query for vcenter syslog servers
+
+## 3.0.0 (January 30, 2024)
+
+IMPROVEMENTS:
+* Implemented the id shim functions for a host on several resources which now gives those resources the ability to reference a host by the `host_system_id` or by the `hostname` attribute.
+
+BREAKING CHANGES:
+* Updated the `host` attribute on the `vsphere_vnic` resource to `host_system_id` to standardize naming with the rest of the resources that reference a host
+
+## 2.10.0 (January 11, 2024)
+
+FEATURES:
+* `resource/host_config_syslog` : Enables ability to update syslog settings for esxi host
+
 ## 2.9.1 (January 9, 2024)
 
 CHORES:

@@ -44,20 +44,67 @@ func TestAccResourceVSphereIscsiTarget_basic(t *testing.T) {
 		CheckDestroy: testAccVSphereIscsiTargetDestroy(resourceName),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccResourceVSphereIscsiTargetConfig(staticTargetIP, sendTargetIP),
+				Config: testAccResourceVSphereIscsiTargetConfig(staticTargetIP, sendTargetIP, false),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVSphereIscsiTargetValidation(resourceName, staticTargetIP, sendTargetIP),
 				),
 			},
 			{
-				Config: testAccResourceVSphereIscsiTargetConfig(newStaticTargetIP, newSendTargetIP),
+				Config: testAccResourceVSphereIscsiTargetConfig(newStaticTargetIP, newSendTargetIP, false),
 				Check: resource.ComposeTestCheckFunc(
 					testAccVSphereIscsiTargetValidation(resourceName, newStaticTargetIP, newSendTargetIP),
 				),
 			},
 			{
 				ResourceName: resourceName,
-				Config:       testAccResourceVSphereIscsiTargetConfig(newStaticTargetIP, newSendTargetIP),
+				Config:       testAccResourceVSphereIscsiTargetConfig(newStaticTargetIP, newSendTargetIP, false),
+				ImportState:  true,
+			},
+		},
+	})
+}
+
+func TestAccResourceVSphereIscsiTarget_hostname(t *testing.T) {
+	resourceName := "vsphere_iscsi_target.target"
+
+	staticTargetIP := "172.20.0.1"
+	sendTargetIP := "172.20.1.1"
+
+	newStaticTargetIP := "172.21.0.1"
+	newSendTargetIP := "172.21.1.1"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			RunSweepers()
+			testAccPreCheck(t)
+			testAccCheckEnvVariablesF(
+				t,
+				[]string{
+					"TF_VAR_VSPHERE_DATACENTER",
+					"TF_VAR_VSPHERE_CLUSTER",
+					"TF_VAR_VSPHERE_ESXI1",
+					"TF_VAR_VSPHERE_ISCSI_ADAPTER_ID",
+				},
+			)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccVSphereIscsiTargetDestroy(resourceName),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccResourceVSphereIscsiTargetConfig(staticTargetIP, sendTargetIP, true),
+				Check: resource.ComposeTestCheckFunc(
+					testAccVSphereIscsiTargetValidation(resourceName, staticTargetIP, sendTargetIP),
+				),
+			},
+			{
+				Config: testAccResourceVSphereIscsiTargetConfig(newStaticTargetIP, newSendTargetIP, true),
+				Check: resource.ComposeTestCheckFunc(
+					testAccVSphereIscsiTargetValidation(resourceName, newStaticTargetIP, newSendTargetIP),
+				),
+			},
+			{
+				ResourceName: resourceName,
+				Config:       testAccResourceVSphereIscsiTargetConfig(newStaticTargetIP, newSendTargetIP, true),
 				ImportState:  true,
 			},
 		},
@@ -73,7 +120,12 @@ func testAccVSphereIscsiTargetValidation(resourceName, staticTargetIP, sendTarge
 		}
 		hostID := strings.Split(rs.Primary.ID, ":")[0]
 		client := testAccProvider.Meta().(*Client).vimClient
-		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+		host, _, err := hostsystem.CheckIfHostnameOrID(client, hostID)
+		if err != nil {
+			return fmt.Errorf("error retrieving host for iscsi target validation: %s", err)
+		}
+
+		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
 		if err != nil {
 			return err
 		}
@@ -121,7 +173,12 @@ func testAccVSphereIscsiTargetDestroy(name string) resource.TestCheckFunc {
 		}
 		hostID := strings.Split(rs.Primary.ID, ":")[0]
 		client := testAccProvider.Meta().(*Client).vimClient
-		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, hostID)
+		host, _, err := hostsystem.CheckIfHostnameOrID(client, hostID)
+		if err != nil {
+			return fmt.Errorf("error retrieving host for iscsi target validation: %s", err)
+		}
+
+		hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
 		if err != nil {
 			return err
 		}
@@ -145,13 +202,13 @@ func testAccVSphereIscsiTargetDestroy(name string) resource.TestCheckFunc {
 	}
 }
 
-func testAccResourceVSphereIscsiTargetConfig(staticTargetIP, sendTargetIP string) string {
-	return fmt.Sprintf(
+func testAccResourceVSphereIscsiTargetConfig(staticTargetIP, sendTargetIP string, useHostname bool) string {
+	resourceStr :=
 		`
 	%s
 
 	resource "vsphere_iscsi_target" "target" {
-		host_system_id = data.vsphere_host.roothost1.id
+		%s
 		adapter_id     = "%s"
 
 		static_target{
@@ -182,12 +239,31 @@ func testAccResourceVSphereIscsiTargetConfig(staticTargetIP, sendTargetIP string
 			}
 		}
 	}
-	`,
+	`
+
+	if useHostname {
+		return fmt.Sprintf(
+			resourceStr,
+			testhelper.CombineConfigs(
+				testhelper.ConfigDataRootDC1(),
+				testhelper.ConfigDataRootComputeCluster1(),
+				testhelper.ConfigDataRootHost1(),
+			),
+			"hostname = data.vsphere_host.roothost1.name",
+			os.Getenv("TF_VAR_VSPHERE_ISCSI_ADAPTER_ID"),
+			staticTargetIP,
+			sendTargetIP,
+		)
+	}
+
+	return fmt.Sprintf(
+		resourceStr,
 		testhelper.CombineConfigs(
 			testhelper.ConfigDataRootDC1(),
 			testhelper.ConfigDataRootComputeCluster1(),
 			testhelper.ConfigDataRootHost1(),
 		),
+		"host_system_id = data.vsphere_host.roothost1.id",
 		os.Getenv("TF_VAR_VSPHERE_ISCSI_ADAPTER_ID"),
 		staticTargetIP,
 		sendTargetIP,

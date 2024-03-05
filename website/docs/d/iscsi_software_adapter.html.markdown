@@ -15,7 +15,15 @@ The `vsphere_iscsi_software_adapter` data source can be used to discover the isc
 
 ```hcl
 data "vsphere_iscsi_software_adapter" "host" {
-  host_system_id = "my_host_id"
+  host_system_id = "host-01"
+}
+```
+
+**Using hostname**
+
+```hcl
+data "vsphere_iscsi_software_adapter" "host" {
+  hostname = "host.example.com"
 }
 ```
 
@@ -23,12 +31,14 @@ data "vsphere_iscsi_software_adapter" "host" {
 
 The following arguments are supported:
 
-* `host_system_id` - (Required) The host id we want to obtain iscsi software adapter information.
+* `host_system_id` - (Required/Optional) The host id we want to obtain iscsi software adapter information.
+* `hostname` - (Required/Optional) The hostname we want to obtain iscsi software adapter information.
 
 ~> **NOTE:** The iscsi software adapter for given host must already be enabled to grab information
 
 ## Attribute Reference
 
-* `id` - Represents the host and software adapter id in the form of: `<host_system_id>:<adapter_id>`
+* `id` - Represents the host and software adapter id in the form of: `<host_system_id | hostname>:<adapter_id>`
 * `host_system_id` - The host id the iscsi software adapter is attached to
+* `hostname` - The hostname the iscsi software adapter is attached to
 * `iscsi_name` - The iscsi software adapter name from either being user defined or vmware generated

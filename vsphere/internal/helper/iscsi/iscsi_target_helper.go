@@ -29,14 +29,14 @@ const (
 //
 // The returned type is only an interface of a base adapter so it is up to the caller of
 // this function to cast it to the correct type
-func GetIscsiAdater(hssProps *mo.HostStorageSystem, host, adapterID string) (types.BaseHostHostBusAdapter, error) {
+func GetIscsiAdater(hssProps *mo.HostStorageSystem, hostname, adapterID string) (types.BaseHostHostBusAdapter, error) {
 	for _, adapter := range hssProps.StorageDeviceInfo.HostBusAdapter {
 		if adapter.GetHostHostBusAdapter().Device == adapterID {
 			return adapter, nil
 		}
 	}
 
-	return nil, fmt.Errorf("could not find iscsi adapter device '%s' for host '%s'", adapterID, host)
+	return nil, fmt.Errorf("could not find iscsi adapter device '%s' for host '%s'", adapterID, hostname)
 }
 
 // RescanStorageDevices performs a vmware rescan on all hba devices with a timeout
@@ -117,7 +117,7 @@ func RemoveInternetScsiStaticTargets(
 // with timeout
 func AddInternetScsiSendTargets(
 	client *govmomi.Client,
-	host,
+	hostname,
 	adapterID string,
 	hssProps *mo.HostStorageSystem,
 	targets []types.HostInternetScsiHbaSendTarget,
@@ -135,7 +135,7 @@ func AddInternetScsiSendTargets(
 		return fmt.Errorf(
 			"error trying to add send targets for iscsi adapter '%s' on host '%s': %s",
 			adapterID,
-			host,
+			hostname,
 			err,
 		)
 	}
@@ -147,7 +147,7 @@ func AddInternetScsiSendTargets(
 // with timeout
 func RemoveInternetScsiSendTargets(
 	client *govmomi.Client,
-	host,
+	hostname,
 	adapterID string,
 	hssProps *mo.HostStorageSystem,
 	targets []types.HostInternetScsiHbaSendTarget,
@@ -165,7 +165,7 @@ func RemoveInternetScsiSendTargets(
 		return fmt.Errorf(
 			"error trying to remove send targets from iscsi adapter '%s' on host '%s': %s",
 			adapterID,
-			host,
+			hostname,
 			err,
 		)
 	}
@@ -275,4 +275,8 @@ func PortSchema() *schema.Schema {
 		Description:  "Port of the iscsi target",
 		ValidateFunc: validation.IsPortNumber,
 	}
+}
+
+func GetIscsiTargetID(tfID, adapterID string) string {
+	return fmt.Sprintf("%s:%s", tfID, adapterID)
 }

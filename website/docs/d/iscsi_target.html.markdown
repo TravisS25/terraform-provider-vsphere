@@ -24,13 +24,17 @@ data "vsphere_iscsi_target" "host" {
 
 The following arguments are supported:
 
-* `host_system_id` - (Required) The host id to gather target information
+* `host_system_id` - (Required/Optional) The host id to gather target information
+* `hostname` - (Required/Optional) The hostname to gather target information
 * `adapter_id` - (Required) The adapter on given host to gather target information
+
+~> **NOTE:** Must choose either `host_system_id` or `hostname` but not both
 
 ## Attribute Reference
 
-* `id` - Represents the host and adpater id of targets in the form of: `<host_system_id>:<adapter_id>`
+* `id` - Represents the host and adpater id of targets in the form of: `<host_system_id | hostname>:<adapter_id>`
 * `host_system_id` - The host id the iscsi adapter is attached to
+* `hostname` - The hostname the iscsi adapter is attached to
 * `adapter_id` - The iscsi adapter id the targets will be attached to
 * `static_target` - The set of resource static targets for given host and adapter id
   * `ip` - The ip of the static target

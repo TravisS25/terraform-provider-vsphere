@@ -140,7 +140,9 @@ func Provider() *schema.Provider {
 			"vsphere_virtual_machine":                         resourceVSphereVirtualMachine(),
 			"vsphere_nas_datastore":                           resourceVSphereNasDatastore(),
 			"vsphere_storage_drs_vm_override":                 resourceVSphereStorageDrsVMOverride(),
+			"vsphere_vcenter_dns":                             resourceVSphereVcenterDNS(),
 			"vsphere_vapp_container":                          resourceVSphereVAppContainer(),
+			"vsphere_vcenter_syslog":                          resourceVSphereVcenterSyslog(),
 			"vsphere_vapp_entity":                             resourceVSphereVAppEntity(),
 			"vsphere_vmfs_datastore":                          resourceVSphereVmfsDatastore(),
 			"vsphere_virtual_machine_snapshot":                resourceVSphereVirtualMachineSnapshot(),
@@ -154,6 +156,8 @@ func Provider() *schema.Provider {
 			"vsphere_iscsi_target":                            resourceVSphereIscsiTarget(),
 			"vsphere_host_config_dns":                         resourceVSphereHostConfigDNS(),
 			"vsphere_host_config_date_time":                   resourceVSphereHostConfigDateTime(),
+			"vsphere_host_config_syslog":                      resourceVSphereHostConfigSyslog(),
+			"vsphere_host_config_snmp":                        resourceVSphereHostConfigSNMP(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -178,6 +182,8 @@ func Provider() *schema.Provider {
 			"vsphere_storage_policy":             dataSourceVSphereStoragePolicy(),
 			"vsphere_tag":                        dataSourceVSphereTag(),
 			"vsphere_tag_category":               dataSourceVSphereTagCategory(),
+			"vsphere_vcenter_syslog":             dataSourceVSphereVcenterSyslog(),
+			"vsphere_vcenter_dns":                dataSourceVSphereVcenterDNS(),
 			"vsphere_vapp_container":             dataSourceVSphereVAppContainer(),
 			"vsphere_virtual_machine":            dataSourceVSphereVirtualMachine(),
 			"vsphere_vmfs_disks":                 dataSourceVSphereVmfsDisks(),
@@ -186,6 +192,9 @@ func Provider() *schema.Provider {
 			"vsphere_iscsi_software_adapter":     dataSourceVSphereIscsiSoftwareAdapter(),
 			"vsphere_iscsi_target":               dataSourceVSphereIscsiTarget(),
 			"vsphere_host_config_date_time":      dataSourceVSphereHostConfigDateTime(),
+			"vsphere_host_config_syslog":         dataSourceVSphereHostConfigSyslog(),
+			"vsphere_host_list":                  dataSourceVSphereHostList(),
+			"vsphere_host_config_snmp":           dataSourceVSphereHostConfigSNMP(),
 		},
 
 		ConfigureFunc: providerConfigure,
