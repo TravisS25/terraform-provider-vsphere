@@ -1,4 +1,22 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 3.4.0 (March 05, 2024)
+FEATURES:
+* `resource/vsphere_host_config_dns` : Adds ability to set dns settings for esxi hosts
+
+## 3.3.1 (March 05, 2024)
+IMPROVEMENTS:
+* Added soft delete option for vcenter dns so when deleting the vcenter dns resource, it doesn't
+delete all dns servers for vcenter as this caused vcenter to break as it couldn't resolve any
+esxi or vm hostname
+
+## 3.3.0 (March 04, 2024)
+FEATURES:
+* `resource/vsphere_vcenter_snmp` : Adds ability to enable snmp settings for vcenter host
+* `datasource/vsphere_vcenter_snmp` : Adds ability to query snmp setings from vcenter host
+
+BUG FIXES:
+* Fixed edge case bug with rest request helper
+
 ## 3.2.0 (February 22, 2024)
 FEATURES:
 * `resource/vsphere_host_config_snmp` : Adds ability to enable snmp settings for esxi host

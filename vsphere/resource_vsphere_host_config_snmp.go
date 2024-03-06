@@ -1,7 +1,6 @@
 package vsphere
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -28,7 +27,7 @@ func resourceVSphereHostConfigSNMP() *schema.Resource {
 		Read:          resourceVSphereHostConfigSNMPRead,
 		Delete:        resourceVSphereHostConfigSNMPDelete,
 		Update:        resourceVSphereHostConfigSNMPUpdate,
-		CustomizeDiff: resourceVSphereHostConfigSNMPCustomDiff,
+		CustomizeDiff: getSNMPCustomDiff(true),
 		Importer: &schema.ResourceImporter{
 			State: resourceVSphereHostConfigSNMPImport,
 		},
@@ -60,13 +59,13 @@ func resourceVSphereHostConfigSNMP() *schema.Resource {
 			"user": {
 				Type:        schema.TypeString,
 				Required:    true,
-				Description: "User of host.  Only required if using snmp v3",
+				Description: "User of host",
 			},
 			"password": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Password of host.  Only required if using snmp v3",
+				Description: "Password of host",
 			},
 			"known_hosts_path": {
 				Type:     schema.TypeString,
@@ -242,94 +241,13 @@ func resourceVSphereHostConfigSNMPImport(d *schema.ResourceData, meta interface{
 		return nil, fmt.Errorf("error retrieving host on snmp import: %s", err)
 	}
 
-	user := os.Getenv("TF_VAR_VSPHERE_ESXI_USER")
-	password := os.Getenv("TF_VAR_VSPHERE_ESXI_PASSWORD")
-	sshPort := os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PORT")
-	sshTimeout := os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_TIMEOUT")
-
-	if user == "" {
-		return nil, fmt.Errorf("must set 'TF_VAR_VSPHERE_ESXI_USER' env variable")
-	}
-	if password == "" {
-		return nil, fmt.Errorf("must set 'TF_VAR_VSPHERE_ESXI_PASSWORD' env variable")
-	}
-	if sshPort == "" {
-		sshPort = "22"
-	}
-	if sshTimeout == "" {
-		sshTimeout = "8"
-	}
-
-	port, err := strconv.Atoi(sshPort)
-	if err != nil {
-		return nil, fmt.Errorf("'ssh_port' must be integer")
-	}
-
-	timeout, err := strconv.Atoi(sshTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("'ssh_timeout' must be integer")
+	if err = snmpSSHImport(d, true); err != nil {
+		return nil, err
 	}
 
 	d.SetId(hr.Value)
 	d.Set(hr.IDName, hr.Value)
-	d.Set("user", user)
-	d.Set("password", password)
-	d.Set("ssh_port", port)
-	d.Set("ssh_timeout", timeout)
-
 	return []*schema.ResourceData{d}, nil
-}
-
-func resourceVSphereHostConfigSNMPCustomDiff(ctx context.Context, rd *schema.ResourceDiff, meta interface{}) error {
-	users := rd.Get("remote_user").(*schema.Set).List()
-	ap := rd.Get("authentication_protocol").(string)
-	pp := rd.Get("privacy_protocol").(string)
-	engineID := rd.Get("engine_id").(string)
-	knownHostsPath := rd.Get("known_hosts_path").(string)
-
-	if knownHostsPath != "" {
-		_, err := os.Stat(knownHostsPath)
-		if err != nil {
-			return fmt.Errorf("error with 'known_hosts_path' attribute: %s", err)
-		}
-
-		var tfID string
-		client := meta.(*Client).vimClient
-
-		if rd.Get("hostname").(string) != "" {
-			tfID = rd.Get("hostname").(string)
-		} else {
-			tfID = rd.Get("host_system_id").(string)
-		}
-
-		host, _, err := hostsystem.CheckIfHostnameOrID(client, tfID)
-		if err != nil {
-			return fmt.Errorf("error retrieving host during custom diff: %s", err)
-		}
-
-		if _, err = esxissh.GetKnownHostsOutput(knownHostsPath, host.Name()); err != nil {
-			return fmt.Errorf("error retrieving output to verify host '%s': %s", host.Name(), err)
-		}
-	}
-
-	if len(users) > 0 {
-		if engineID == "" {
-			return fmt.Errorf("'engine_id' required if setting any 'remote_user' resource")
-		}
-	}
-
-	for _, u := range users {
-		user := u.(map[string]interface{})
-
-		if user["authentication_password"].(string) != "" && ap == "none" {
-			return fmt.Errorf("'authentication_protocol' must be set if any 'remote_user' resource has 'authentication_password' set")
-		}
-		if user["privacy_secret"].(string) != "" && pp == "none" {
-			return fmt.Errorf("'privacy_protocol' must be set if any 'remote_user' resource has 'privacy_secret' set")
-		}
-	}
-
-	return nil
 }
 
 func hostConfigSNMPRead(client *govmomi.Client, d *schema.ResourceData, host *object.HostSystem) error {
@@ -359,13 +277,8 @@ func hostConfigSNMPRead(client *govmomi.Client, d *schema.ResourceData, host *ob
 		return fmt.Errorf("error executing command to gather snmp settings host '%s': %s", host.Name(), err)
 	}
 
-	outBuf := bytes.Buffer{}
-	if _, err = outBuf.ReadFrom(result); err != nil {
-		return fmt.Errorf("error reading output result on host '%s': %s", host.Name(), err)
-	}
-
 	for {
-		line, err := outBuf.ReadString('\n')
+		line, err := result.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
 				return fmt.Errorf("error reading configuration output on host '%s': %s", host.Name(), err)
@@ -441,11 +354,6 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 	defer cancel()
 
 	users := d.Get("remote_user").(*schema.Set).List()
-
-	// This flag is used to indicate if we should shut down the ssh service after completing our snmp commands
-	// This will only be set to true if the ssh service is currently NOT running
-	// shutdownSSH := false
-	// sshPolicy := ""
 	enabled := true
 
 	if len(users) > 0 {
@@ -538,7 +446,6 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 			ap := d.Get("authentication_protocol").(string)
 			pp := d.Get("privacy_protocol").(string)
 			eID := d.Get("engine_id").(string)
-			outBuf := bytes.Buffer{}
 
 			for idx, u := range users {
 				esxHashCmd := baseHashCmd
@@ -574,25 +481,21 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 						return fmt.Errorf("error executing hash command on host '%s': %s", host.Name(), err)
 					}
 
-					if _, err = outBuf.ReadFrom(result); err != nil {
-						return fmt.Errorf("error reading stdout of esxcli hash command on host '%s': %s", host.Name(), err)
-					}
-
-					authLine, err := outBuf.ReadString('\n')
+					authLine, err := result.ReadString('\n')
 					if err != nil {
 						return fmt.Errorf("error reading stdout of esxcli hash command on host '%s': %s", host.Name(), err)
 					}
 
 					authHash := strings.TrimSpace(strings.Split(authLine, ":")[1])
 
-					privLine, err := outBuf.ReadString('\n')
+					privLine, err := result.ReadString('\n')
 					if err != nil {
 						return fmt.Errorf("error reading stdout of esxcli hash command on host '%s': %s", host.Name(), err)
 					}
 
 					privHash := strings.TrimSpace(strings.Split(privLine, ":")[1])
 
-					outBuf.Reset()
+					result.Reset()
 
 					if authHash != "" {
 						ah = authHash
@@ -711,4 +614,114 @@ func startSSHServiceForSNMP(client *govmomi.Client, host *object.HostSystem) err
 	}
 
 	return nil
+}
+
+func snmpSSHImport(d *schema.ResourceData, isEsxiHost bool) error {
+	var user, password, sshPort, sshTimeout string
+
+	if isEsxiHost {
+		user = os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER")
+		password = os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD")
+		sshPort = os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PORT")
+		sshTimeout = os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_TIMEOUT")
+	} else {
+		user = os.Getenv("TF_VAR_VSPHERE_VCENTER_SSH_USER")
+		password = os.Getenv("TF_VAR_VSPHERE_VCENTER_SSH_PASSWORD")
+		sshPort = os.Getenv("TF_VAR_VSPHERE_VCENTER_SSH_PORT")
+		sshTimeout = os.Getenv("TF_VAR_VSPHERE_VCENTER_SSH_TIMEOUT")
+	}
+
+	knownHostsPath := os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH")
+
+	if user == "" {
+		return fmt.Errorf("must set 'TF_VAR_VSPHERE_ESXI_SSH_USER' env variable")
+	}
+	if password == "" {
+		return fmt.Errorf("must set 'TF_VAR_VSPHERE_ESXI_SSH_PASSWORD' env variable")
+	}
+	if sshPort == "" {
+		sshPort = "22"
+	}
+	if sshTimeout == "" {
+		sshTimeout = "8"
+	}
+
+	port, err := strconv.Atoi(sshPort)
+	if err != nil {
+		return fmt.Errorf("'ssh_port' must be integer")
+	}
+
+	timeout, err := strconv.Atoi(sshTimeout)
+	if err != nil {
+		return fmt.Errorf("'ssh_timeout' must be integer")
+	}
+
+	d.Set("user", user)
+	d.Set("password", password)
+	d.Set("ssh_port", port)
+	d.Set("ssh_timeout", timeout)
+	d.Set("known_hosts_path", knownHostsPath)
+	return nil
+}
+
+func getSNMPCustomDiff(isHost bool) func(ctx context.Context, rd *schema.ResourceDiff, meta interface{}) error {
+	return func(ctx context.Context, rd *schema.ResourceDiff, meta interface{}) error {
+		users := rd.Get("remote_user").(*schema.Set).List()
+		ap := rd.Get("authentication_protocol").(string)
+		pp := rd.Get("privacy_protocol").(string)
+		engineID := rd.Get("engine_id").(string)
+		knownHostsPath := rd.Get("known_hosts_path").(string)
+
+		if knownHostsPath != "" {
+			_, err := os.Stat(knownHostsPath)
+			if err != nil {
+				return fmt.Errorf("error with 'known_hosts_path' attribute: %s", err)
+			}
+
+			var hostname string
+			client := meta.(*Client).vimClient
+
+			if isHost {
+				var tfID string
+
+				if rd.Get("hostname").(string) != "" {
+					tfID = rd.Get("hostname").(string)
+				} else {
+					tfID = rd.Get("host_system_id").(string)
+				}
+
+				host, _, err := hostsystem.CheckIfHostnameOrID(client, tfID)
+				if err != nil {
+					return fmt.Errorf("error retrieving host during custom diff: %s", err)
+				}
+
+				hostname = host.Name()
+			} else {
+				hostname = client.URL().Hostname()
+			}
+
+			if _, err = esxissh.GetKnownHostsOutput(knownHostsPath, hostname); err != nil {
+				return fmt.Errorf("error retrieving output to verify host '%s': %s", hostname, err)
+			}
+		}
+
+		if len(users) > 0 {
+			if engineID == "" {
+				return fmt.Errorf("'engine_id' required if setting any 'remote_user' resource")
+			}
+		}
+
+		for _, u := range users {
+			user := u.(map[string]interface{})
+
+			if user["authentication_password"].(string) != "" && ap == "none" {
+				return fmt.Errorf("'authentication_protocol' must be set if any 'remote_user' resource has 'authentication_password' set")
+			}
+			if user["privacy_secret"].(string) != "" && pp == "none" {
+				return fmt.Errorf("'privacy_protocol' must be set if any 'remote_user' resource has 'privacy_secret' set")
+			}
+		}
+
+		return nil
+	}
 }

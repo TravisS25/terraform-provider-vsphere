@@ -64,12 +64,11 @@ func resourceVSphereVcenterDNSUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceVSphereVcenterDNSDelete(d *schema.ResourceData, meta interface{}) error {
-	var err error
-
-	client := meta.(*Client).restClient
-
 	if !d.Get("soft_delete").(bool) {
-		if err = viapi.RestUpdateRequest(
+		var err error
+
+		client := meta.(*Client).restClient
+		if _, err = viapi.RestRequest[[]interface{}](
 			client,
 			http.MethodPut,
 			dnsServersPath,
@@ -101,7 +100,7 @@ func resourceVSphereVcenterDNSImport(ctx context.Context, d *schema.ResourceData
 func vsphereVcenterDNSRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*Client).restClient
 
-	bodyRes, err := viapi.GetRestBodyResponse[map[string]interface{}](client, dnsServersPath)
+	bodyRes, err := viapi.RestRequest[map[string]interface{}](client, http.MethodGet, dnsServersPath, nil)
 	if err != nil {
 		return fmt.Errorf("error retrieving dns servers response: %s", err)
 	}
@@ -119,7 +118,7 @@ func vsphereVcenterDNSUpdate(d *schema.ResourceData, meta interface{}) error {
 	// and the second payload is how to do on new versions so if first way errors out, try
 	// second way before erroring out.  This is a quick fix and if there is a better way
 	// this should be updated in the future
-	if err = viapi.RestUpdateRequest(
+	if _, err = viapi.RestRequest[[]interface{}](
 		client,
 		http.MethodPut,
 		dnsServersPath,
@@ -130,7 +129,7 @@ func vsphereVcenterDNSUpdate(d *schema.ResourceData, meta interface{}) error {
 			},
 		},
 	); err != nil {
-		if err = viapi.RestUpdateRequest(
+		if _, err = viapi.RestRequest[[]interface{}](
 			client,
 			http.MethodPut,
 			dnsServersPath,

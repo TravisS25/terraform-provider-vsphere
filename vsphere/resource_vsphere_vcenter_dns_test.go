@@ -5,6 +5,7 @@ package vsphere
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -70,7 +71,7 @@ func testAccResourceVSphereVcenterDNSValidation(resourceName string, givenServer
 		}
 
 		client := testAccProvider.Meta().(*Client).restClient
-		bodyRes, err := viapi.GetRestBodyResponse[map[string]interface{}](client, dnsServersPath)
+		bodyRes, err := viapi.RestRequest[map[string]interface{}](client, http.MethodGet, dnsServersPath, nil)
 		if err != nil {
 			return err
 		}

@@ -24,8 +24,8 @@ func TestAccDataSourceVSphereHostConfigSNMP_basic(t *testing.T) {
 					"TF_VAR_VSPHERE_DATACENTER",
 					"TF_VAR_VSPHERE_CLUSTER",
 					"TF_VAR_VSPHERE_ESXI1",
-					"TF_VAR_VSPHERE_ESXI_USER",
-					"TF_VAR_VSPHERE_ESXI_PASSWORD",
+					"TF_VAR_VSPHERE_ESXI_SSH_USER",
+					"TF_VAR_VSPHERE_ESXI_SSH_PASSWORD",
 				},
 			)
 		},
@@ -56,8 +56,8 @@ func TestAccDataSourceVSphereHostConfigSNMP_hostname(t *testing.T) {
 					"TF_VAR_VSPHERE_DATACENTER",
 					"TF_VAR_VSPHERE_CLUSTER",
 					"TF_VAR_VSPHERE_ESXI1",
-					"TF_VAR_VSPHERE_ESXI_USER",
-					"TF_VAR_VSPHERE_ESXI_PASSWORD",
+					"TF_VAR_VSPHERE_ESXI_SSH_USER",
+					"TF_VAR_VSPHERE_ESXI_SSH_PASSWORD",
 				},
 			)
 		},
@@ -118,11 +118,11 @@ func testAccDataSourceVSphereHostConfigSNMPConfig(useHostname bool) string {
 				testhelper.ConfigDataRootHost1(),
 			),
 			"hostname = data.vsphere_host.roothost1.name",
-			os.Getenv("TF_VAR_VSPHERE_ESXI_USER"),
-			os.Getenv("TF_VAR_VSPHERE_ESXI_PASSWORD"),
+			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
+			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
 			"hostname = vsphere_host_config_snmp.h1.hostname",
-			os.Getenv("TF_VAR_VSPHERE_ESXI_USER"),
-			os.Getenv("TF_VAR_VSPHERE_ESXI_PASSWORD"),
+			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
+			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
 		)
 	}
 
@@ -134,10 +134,10 @@ func testAccDataSourceVSphereHostConfigSNMPConfig(useHostname bool) string {
 			testhelper.ConfigDataRootHost1(),
 		),
 		"host_system_id = data.vsphere_host.roothost1.id",
-		os.Getenv("TF_VAR_VSPHERE_ESXI_USER"),
-		os.Getenv("TF_VAR_VSPHERE_ESXI_PASSWORD"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
 		"host_system_id = vsphere_host_config_snmp.h1.host_system_id",
-		os.Getenv("TF_VAR_VSPHERE_ESXI_USER"),
-		os.Getenv("TF_VAR_VSPHERE_ESXI_PASSWORD"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
 	)
 }
