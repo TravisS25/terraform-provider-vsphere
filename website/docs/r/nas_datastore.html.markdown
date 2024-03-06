@@ -59,8 +59,9 @@ The following arguments are supported:
 
 * `name` - (Required) The name of the datastore. Forces a new resource if
   changed.
-* `host_system_ids` - (Required) The [managed object IDs][docs-about-morefs] of
+* `host_system_ids` - (Required/Optional) The [managed object IDs][docs-about-morefs] of
   the hosts to mount the datastore on.
+* `hostnames` - (Required/Optional) The hostnames of the hosts to mount the datastore on.
 * `type` - (Optional) The type of NAS volume. Can be one of `NFS` (to denote
   v3) or `NFS41` (to denote NFS v4.1). Default: `NFS`. Forces a new resource if
   changed.

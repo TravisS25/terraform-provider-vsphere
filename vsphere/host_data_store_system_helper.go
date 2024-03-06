@@ -27,6 +27,18 @@ func hostDatastoreSystemFromHostSystemID(client *govmomi.Client, hsID string) (*
 	return hs.ConfigManager().DatastoreSystem(ctx)
 }
 
+// hostDatastoreSystemFromHostnameOrID locates a HostDatastoreSystem from a
+// specified HostSystem hostname or managed object ID.
+func hostDatastoreSystemFromHostnameOrID(client *govmomi.Client, tfID string) (*object.HostDatastoreSystem, error) {
+	hs, _, err := hostsystem.CheckIfHostnameOrID(client, tfID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
+	defer cancel()
+	return hs.ConfigManager().DatastoreSystem(ctx)
+}
+
 // availableScsiDisk checks to make sure that a disk is available for use in a
 // VMFS datastore, and returns the ScsiDisk.
 func availableScsiDisk(dss *object.HostDatastoreSystem, name string) (*types.HostScsiDisk, error) {

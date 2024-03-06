@@ -60,6 +60,7 @@ func schemaHostNasVolumeSpec() map[string]*schema.Schema {
 		},
 		"security_type": {
 			Type:        schema.TypeString,
+			Default:     hostNasVolumeSecurityTypeAuthSys,
 			Description: "The security type to use.",
 			ForceNew:    true,
 			Optional:    true,
