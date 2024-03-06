@@ -154,6 +154,7 @@ func Provider() *schema.Provider {
 			"vsphere_host_service_state":                      resourceVsphereHostServiceState(),
 			"vsphere_iscsi_software_adapter":                  resourceVSphereIscsiSoftwareAdapter(),
 			"vsphere_iscsi_target":                            resourceVSphereIscsiTarget(),
+			"vsphere_host_config_dns":                         resourceVSphereHostConfigDNS(),
 			"vsphere_host_config_date_time":                   resourceVSphereHostConfigDateTime(),
 			"vsphere_host_config_syslog":                      resourceVSphereHostConfigSyslog(),
 			"vsphere_host_config_snmp":                        resourceVSphereHostConfigSNMP(),
