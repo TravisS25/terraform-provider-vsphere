@@ -5,6 +5,7 @@ package vsphere
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -54,7 +55,7 @@ func testAccResourceVSphereVcenterDNSValidation(resourceName, server string, isU
 		}
 
 		client := testAccProvider.Meta().(*Client).restClient
-		bodyRes, err := viapi.GetRestBodyResponse[map[string]interface{}](client, dnsServersPath)
+		bodyRes, err := viapi.RestRequest[map[string]interface{}](client, http.MethodGet, dnsServersPath, nil)
 		if err != nil {
 			return err
 		}

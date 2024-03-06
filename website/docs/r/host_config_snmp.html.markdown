@@ -115,4 +115,4 @@ terraform import vsphere_host_config_snmp.host host.example.com
 
 The above would import snmp configuration for host with hostname `host.example.com`
 
-~> **NOTE:** Must set `TF_VAR_VSPHERE_ESXI_USER` and `TF_VAR_VSPHERE_ESXI_PASSWORD` env variables to import.  Optionally can set `TF_VAR_VSPHERE_ESXI_SSH_PORT` and `TF_VAR_VSPHERE_ESXI_SSH_TIMEOUT`
+~> **NOTE:** Must set `TF_VAR_VSPHERE_ESXI_SSH_USER` and `TF_VAR_VSPHERE_ESXI_SSH_PASSWORD` env variables to import. Optionally can set `TF_VAR_VSPHERE_ESXI_SSH_PORT`, `TF_VAR_VSPHERE_ESXI_SSH_TIMEOUT` and `TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH`

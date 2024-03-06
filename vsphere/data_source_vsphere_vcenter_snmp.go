@@ -4,35 +4,23 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 )
 
-func dataSourceVSphereHostConfigSNMP() *schema.Resource {
+func dataSourceVSphereVcenterSNMP() *schema.Resource {
 	return &schema.Resource{
-		Read: dataSourceVSphereHostConfigSNMPRead,
+		Read: dataSourceVSphereVcenterSNMPRead,
 
 		Schema: map[string]*schema.Schema{
-			"host_system_id": {
-				Type:         schema.TypeString,
-				Description:  "Host id of machine to gather ntp info",
-				Optional:     true,
-				ExactlyOneOf: []string{"hostname"},
-			},
-			"hostname": {
-				Type:        schema.TypeString,
-				Description: "Hostname of machine to gather ntp info",
-				Optional:    true,
-			},
 			"user": {
 				Type:        schema.TypeString,
 				Required:    true,
-				Description: "User of host",
+				Description: "User of vcenter",
 			},
 			"password": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Password of host",
+				Description: "Password of vcenter",
 			},
 			"known_hosts_path": {
 				Type:        schema.TypeString,
@@ -124,17 +112,12 @@ func dataSourceVSphereHostConfigSNMP() *schema.Resource {
 	}
 }
 
-func dataSourceVSphereHostConfigSNMPRead(d *schema.ResourceData, meta interface{}) error {
-	client := meta.(*Client).vimClient
-	host, hr, err := hostsystem.FromHostnameOrID(client, d)
+func dataSourceVSphereVcenterSNMPRead(d *schema.ResourceData, meta interface{}) error {
+	err := vsphereVcenterSNMPRead(d, meta)
 	if err != nil {
-		return fmt.Errorf("error retrieving host on snmp read: %s", err)
+		return fmt.Errorf("error trying to read snmp settings in data source for vcenter: %s", err)
 	}
 
-	if err = hostConfigSNMPRead(client, d, host); err != nil {
-		return fmt.Errorf("error trying to read snmp settings in data source for host '%s': %s", host.Name(), err)
-	}
-
-	d.SetId(hr.Value)
+	d.SetId(vsphereVcenterSnmpID)
 	return nil
 }

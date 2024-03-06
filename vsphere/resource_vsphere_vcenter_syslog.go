@@ -151,7 +151,7 @@ func vsphereVCenterSyslogForwardingUpdate(d *schema.ResourceData, meta interface
 		}
 	}
 
-	err := viapi.RestUpdateRequest(client, http.MethodPut, "/appliance/logging/forwarding", reqBody)
+	_, err := viapi.RestRequest[[]interface{}](client, http.MethodPut, "/appliance/logging/forwarding", reqBody)
 	if err != nil {
 		return fmt.Errorf("error on syslog update request: %s", err)
 	}
