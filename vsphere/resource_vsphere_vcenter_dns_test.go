@@ -6,6 +6,8 @@ package vsphere
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -15,39 +17,53 @@ import (
 
 func TestAccResourceVSphereVcenterDNS_basic(t *testing.T) {
 	resourceName := "vsphere_vcenter_dns.dns"
-	createServer := "172.16.1.10"
-	updateServer := "172.16.2.10"
+	createServer := "172.22.208.11"
+
+	updateServerStr := ""
+	envServers := strings.Split(os.Getenv("TF_VAR_VSPHERE_VCENTER_DNS_SERVERS"), ",")
+	updateServers := make([]string, 0, len(envServers))
+
+	for i, s := range envServers {
+		srv := strings.TrimSpace(s)
+		updateServers = append(updateServers, srv)
+		updateServerStr += `"` + srv + `"`
+
+		if i != len(envServers)-1 {
+			updateServerStr += ", "
+		}
+	}
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			RunSweepers()
 			testAccPreCheck(t)
+			testAccCheckEnvVariablesF(t, []string{"TF_VAR_VSPHERE_VCENTER_DNS_SERVERS"})
 		},
 		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereVcenterDNSValidation(resourceName, "", false),
+		CheckDestroy: testAccResourceVSphereVcenterDNSValidation(resourceName, updateServers),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccResourceVSphereVcenterDNSConfig(createServer),
+				Config: testAccResourceVSphereVcenterDNSConfig(`"` + createServer + `"`),
 				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereVcenterDNSValidation(resourceName, createServer, true),
+					testAccResourceVSphereVcenterDNSValidation(resourceName, []string{createServer}),
 				),
 			},
 			{
-				Config: testAccResourceVSphereVcenterDNSConfig(updateServer),
+				Config: testAccResourceVSphereVcenterDNSConfig(updateServerStr),
 				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereVcenterDNSValidation(resourceName, updateServer, true),
+					testAccResourceVSphereVcenterDNSValidation(resourceName, updateServers),
 				),
 			},
 			{
 				ResourceName: resourceName,
-				Config:       testAccResourceVSphereVcenterDNSConfig(updateServer),
+				Config:       testAccResourceVSphereVcenterDNSConfig(updateServerStr),
 				ImportState:  true,
 			},
 		},
 	})
 }
 
-func testAccResourceVSphereVcenterDNSValidation(resourceName, server string, isUpdate bool) resource.TestCheckFunc {
+func testAccResourceVSphereVcenterDNSValidation(resourceName string, givenServers []string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		_, ok := s.RootModule().Resources[resourceName]
 		if !ok {
@@ -63,16 +79,22 @@ func testAccResourceVSphereVcenterDNSValidation(resourceName, server string, isU
 		if serverRes, ok := bodyRes["servers"]; ok {
 			servers := serverRes.([]interface{})
 
-			if isUpdate {
-				if len(servers) != 1 {
-					return fmt.Errorf("should have 1 dns server; got %+v", servers)
-				}
+			counter := 0
 
-				if servers[0] != server {
-					return fmt.Errorf("server ip should be: '%s'; got '%s'", server, servers[0])
+			for _, givenSrv := range givenServers {
+				for _, resSrv := range servers {
+					if givenSrv == resSrv {
+						counter++
+					}
 				}
-			} else if len(servers) != 0 {
-				return fmt.Errorf("should not have any dns servers; got %+v", servers)
+			}
+
+			if counter != len(givenServers) || len(servers) != len(givenServers) {
+				return fmt.Errorf(
+					"given servers do not match api response servers: given servers: %v; api response servers: %v",
+					givenServers,
+					servers,
+				)
 			}
 		} else {
 			return fmt.Errorf("did not receive server list")
@@ -82,13 +104,13 @@ func testAccResourceVSphereVcenterDNSValidation(resourceName, server string, isU
 	}
 }
 
-func testAccResourceVSphereVcenterDNSConfig(server string) string {
+func testAccResourceVSphereVcenterDNSConfig(serverStr string) string {
 	return fmt.Sprintf(
 		`
 		resource "vsphere_vcenter_dns" "dns" {
-			servers = ["%s"]
+			servers = [%s]
 		}
 		`,
-		server,
+		serverStr,
 	)
 }

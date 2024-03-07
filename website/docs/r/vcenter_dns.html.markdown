@@ -26,6 +26,7 @@ resource "vsphere_vcenter_dns" "dns" {
 The following arguments are supported:
 
 * `servers` - (Required) DNS servers to set for vcenter
+* `soft_delete` - (Optional/Default: true) Determines whether to soft delete the resource.  The reason for this is that if you actually delete all dns servers configured for vcenter, things break by not being able to resolve hostnames within the esxi hosts and vms.  This option allows users to have both the traditional delete and also a soft delete.
 
 ## Importing
 
