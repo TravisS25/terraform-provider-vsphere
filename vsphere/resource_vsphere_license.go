@@ -34,6 +34,9 @@ func resourceVSphereLicense() *schema.Resource {
 		Read:   resourceVSphereLicenseRead,
 		Update: resourceVSphereLicenseUpdate,
 		Delete: resourceVSphereLicenseDelete,
+		Importer: &schema.ResourceImporter{
+			State: resourceVSphereLicenseImport,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"license_key": {
@@ -194,6 +197,18 @@ func resourceVSphereLicenseDelete(d *schema.ResourceData, meta interface{}) erro
 		return nil
 	}
 	return ErrNoSuchKeyFound
+}
+
+func resourceVSphereLicenseImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	client := meta.(*Client).vimClient
+	manager := license.NewManager(client.Client)
+
+	if key := d.Id(); isKeyPresent(key, manager) {
+		d.SetId(key)
+		d.Set("license_key", key)
+		return []*schema.ResourceData{d}, nil
+	}
+	return nil, fmt.Errorf("license key %q was not found on import", d.Id())
 }
 
 func getLicenseInfoFromKey(key string, manager *license.Manager) *types.LicenseManagerLicenseInfo {
