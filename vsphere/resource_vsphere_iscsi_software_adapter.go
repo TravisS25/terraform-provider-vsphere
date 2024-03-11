@@ -212,6 +212,7 @@ func iscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}, isDataSo
 		}
 
 		d.Set("iscsi_name", adapter.IScsiName)
+		d.Set("adapter_id", adapter.Device)
 	} else if isDataSource {
 		return fmt.Errorf("iscsi software adapter is not enabled for host '%s'", host.Name())
 	}
