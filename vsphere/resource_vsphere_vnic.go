@@ -77,7 +77,7 @@ func resourceVsphereNicRead(d *schema.ResourceData, meta interface{}) error {
 
 	_, nicID, _ := splitHostIDNicID(d)
 
-	vnic, err := getVnicFromHost(ctx, client, host, nicID)
+	vnic, err := getVnicFromHost(ctx, host, nicID)
 	if err != nil {
 		log.Printf("[DEBUG] Nic (%s) not found. Probably deleted.", nicID)
 		d.SetId("")
@@ -616,11 +616,10 @@ func getNicSpecFromSchema(d *schema.ResourceData) (*types.HostVirtualNicSpec, er
 	return vnic, nil
 }
 
-func getVnicFromHost(ctx context.Context, client *govmomi.Client, host *object.HostSystem, nicID string) (*types.HostVirtualNic, error) {
+func getVnicFromHost(ctx context.Context, host *object.HostSystem, nicID string) (*types.HostVirtualNic, error) {
 	var hostProps mo.HostSystem
-	var err error
 
-	err = host.Properties(ctx, host.Reference(), nil, &hostProps)
+	err := host.Properties(ctx, host.Reference(), nil, &hostProps)
 	if err != nil {
 		log.Printf("[DEBUG] Failed to get the host's properties: %s", err)
 		return nil, err

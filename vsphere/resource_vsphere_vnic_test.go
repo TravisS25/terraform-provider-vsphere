@@ -248,7 +248,7 @@ func testAccVsphereVNicNetworkSettings(name, ipv4State, ipv6State, netstack stri
 			return fmt.Errorf("error retrieving host for vnic network settings: %s", err)
 		}
 
-		vnic, err := getVnicFromHost(context.TODO(), client, host, vmnicID)
+		vnic, err := getVnicFromHost(context.TODO(), host, vmnicID)
 		if err != nil {
 			return err
 		}
@@ -377,7 +377,7 @@ func nicExists(client *govmomi.Client, nicID string) (bool, error) {
 		return false, fmt.Errorf("error retrieving host for vnicID: %s", err)
 	}
 
-	if _, err = getVnicFromHost(context.TODO(), client, host, vmnicID); err != nil {
+	if _, err = getVnicFromHost(context.TODO(), host, vmnicID); err != nil {
 		if err.Error() == fmt.Sprintf("vNic interface with id %s not found", vmnicID) {
 			return false, nil
 		}
