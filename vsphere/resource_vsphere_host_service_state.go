@@ -43,7 +43,7 @@ func resourceVsphereHostServiceState() *schema.Resource {
 				Description: "Host id of machine that will update service",
 			},
 			"service": {
-				Type:        schema.TypeList,
+				Type:        schema.TypeSet,
 				Required:    true,
 				Description: "The service state object",
 				Elem: &schema.Resource{
@@ -83,7 +83,7 @@ func resourceVSphereHostServiceStateRead(d *schema.ResourceData, meta interface{
 	if err != nil {
 		return err
 	}
-	srvs := d.Get("service").([]interface{})
+	srvs := d.Get("service").(*schema.Set).List()
 	updatedList := make([]interface{}, 0, len(srvs))
 
 	for _, v := range srvs {
@@ -120,7 +120,7 @@ func resourceVSphereHostServiceStateCreate(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	srvs := d.Get("service").([]interface{})
+	srvs := d.Get("service").(*schema.Set).List()
 
 	log.Printf("[INFO] creating host services for host '%s'", host.Name())
 
@@ -159,8 +159,8 @@ func resourceVSphereHostServiceStateUpdate(d *schema.ResourceData, meta interfac
 	log.Printf("[INFO] updating host services for host '%s'", host.Name())
 
 	oldVal, newVal := d.GetChange("service")
-	oldList := oldVal.([]interface{})
-	newList := newVal.([]interface{})
+	oldList := oldVal.(*schema.Set).List()
+	newList := newVal.(*schema.Set).List()
 
 	// If we don't find the same service key in new list compared to old list when looping
 	// we then destroy/deactivate the service within the old list by stopping the service
@@ -227,7 +227,7 @@ func resourceVSphereHostServiceStateDelete(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	srvs := d.Get("service").([]interface{})
+	srvs := d.Get("service").(*schema.Set).List()
 
 	log.Printf("[INFO] deleting host services for host '%s'", host.Name())
 
@@ -296,7 +296,7 @@ func resourceVSphereHostServiceStateImport(ctx context.Context, d *schema.Resour
 }
 
 func resourceVSphereHostServiceStateCustomDiff(ctx context.Context, rd *schema.ResourceDiff, meta interface{}) error {
-	srvs := rd.Get("service").([]interface{})
+	srvs := rd.Get("service").(*schema.Set).List()
 	trackerMap := map[string]bool{}
 
 	for _, val := range srvs {
