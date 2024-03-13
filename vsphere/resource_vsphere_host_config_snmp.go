@@ -383,11 +383,13 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 		}
 
 		var tts []types.HostSnmpDestination
+		resetTrapTarget := false
 
 		ttList := d.Get("trap_target").(*schema.Set).List()
 
 		if len(ttList) == 0 {
 			tts = []types.HostSnmpDestination{}
+			resetTrapTarget = true
 		} else {
 			tts = make([]types.HostSnmpDestination, 0, len(ttList))
 			for _, item := range ttList {
@@ -437,6 +439,22 @@ func hostConfigSNMPUpdate(client *govmomi.Client, d *schema.ResourceData, host *
 			},
 		); err != nil {
 			return fmt.Errorf("error reconfiguring snmp agent on host '%s': %s", host.Name(), err)
+		}
+
+		if resetTrapTarget {
+			if _, err = esxissh.RunCommand(
+				"/bin/esxcli system snmp set --targets reset",
+				host.Name(),
+				d.Get("ssh_port").(int),
+				esxissh.GetDefaultClientConfig(
+					d.Get("user").(string),
+					d.Get("password").(string),
+					d.Get("ssh_timeout").(int),
+					cb,
+				),
+			); err != nil {
+				return fmt.Errorf("error reseting trap targets on host '%s': %s", host.Name(), err)
+			}
 		}
 
 		if len(users) > 0 {
