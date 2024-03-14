@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
 
@@ -694,7 +695,7 @@ func resourceVSphereHostReconnect(d *schema.ResourceData, meta interface{}) erro
 
 	p := property.DefaultCollector(client.Client)
 	_, err = gtask.Wait(context.TODO(), task.Reference(), p, nil)
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "cnxSpec") {
 		return fmt.Errorf("error while reconnecting host(%s): %s", hostResourceID, err)
 	}
 
