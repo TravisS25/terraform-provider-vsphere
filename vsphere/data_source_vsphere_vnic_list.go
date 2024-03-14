@@ -78,7 +78,7 @@ func dataSourceVSphereVnicList() *schema.Resource {
 												"ip_address": {
 													Type:        schema.TypeString,
 													Computed:    true,
-													Description: "Ip of vnic",
+													Description: "IP of vnic",
 												},
 												"subnet_mask": {
 													Type:        schema.TypeString,
