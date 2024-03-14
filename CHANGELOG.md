@@ -1,4 +1,18 @@
 # <!-- markdownlint-disable first-line-h1 no-inline-html -->
+## 3.5.0 (March 14, 2024)
+FEATURES:
+* `datasource/vsphere_vnic_list` : Adds ability to query vnics based on host passed
+
+IMPROVEMENTS:
+* Added ability to import license into `resource/vsphere_license` resource
+* Updated the `service` attribute of `resource/vsphere_host_service_state` resource to use set type
+* Removed unused parameter from vnic function
+
+BUG FIXES:
+* Fixed where `resource/vsphere_nas_datastore` was self deleting on every apply
+* Fixed `resource/vsphere_iscsi_software_adapter` not setting `adapter_id` field
+* Fixed `resource/vsphere_host_config_snmp` not deleting trap targets
+
 ## 3.4.0 (March 05, 2024)
 FEATURES:
 * `resource/vsphere_host_config_dns` : Adds ability to set dns settings for esxi hosts
