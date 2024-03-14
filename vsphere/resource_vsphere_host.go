@@ -695,6 +695,10 @@ func resourceVSphereHostReconnect(d *schema.ResourceData, meta interface{}) erro
 
 	p := property.DefaultCollector(client.Client)
 	_, err = gtask.Wait(context.TODO(), task.Reference(), p, nil)
+
+	// This is a hack fix to ignore error that comes back from api stating that cnxSpec is incorrect
+	// even though the task completes fine and is added to state.  If there is a proper fix for
+	// this, please update this to take out contains function
 	if err != nil && !strings.Contains(err.Error(), "cnxSpec") {
 		return fmt.Errorf("error while reconnecting host(%s): %s", hostResourceID, err)
 	}
