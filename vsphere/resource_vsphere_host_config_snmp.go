@@ -638,24 +638,24 @@ func snmpSSHImport(d *schema.ResourceData, isEsxiHost bool) error {
 	var user, password, sshPort, sshTimeout string
 
 	if isEsxiHost {
-		user = os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER")
-		password = os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD")
-		sshPort = os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PORT")
-		sshTimeout = os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_TIMEOUT")
+		user = os.Getenv("TF_VAR_vsphere_esxi_ssh_user")
+		password = os.Getenv("TF_VAR_vsphere_esxi_ssh_password")
+		sshPort = os.Getenv("TF_VAR_vsphere_esxi_ssh_port")
+		sshTimeout = os.Getenv("TF_VAR_vsphere_esxi_ssh_timeout")
 	} else {
-		user = os.Getenv("TF_VAR_VSPHERE_VCENTER_SSH_USER")
-		password = os.Getenv("TF_VAR_VSPHERE_VCENTER_SSH_PASSWORD")
-		sshPort = os.Getenv("TF_VAR_VSPHERE_VCENTER_SSH_PORT")
-		sshTimeout = os.Getenv("TF_VAR_VSPHERE_VCENTER_SSH_TIMEOUT")
+		user = os.Getenv("TF_VAR_vsphere_vcenter_ssh_user")
+		password = os.Getenv("TF_VAR_vsphere_vcenter_ssh_password")
+		sshPort = os.Getenv("TF_VAR_vsphere_center_ssh_port")
+		sshTimeout = os.Getenv("TF_VAR_vsphere_vcenter_ssh_timeout")
 	}
 
-	knownHostsPath := os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH")
+	knownHostsPath := os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path")
 
 	if user == "" {
-		return fmt.Errorf("must set 'TF_VAR_VSPHERE_ESXI_SSH_USER' env variable")
+		return fmt.Errorf("must set 'TF_VAR_vsphere_esxi_ssh_user' env variable")
 	}
 	if password == "" {
-		return fmt.Errorf("must set 'TF_VAR_VSPHERE_ESXI_SSH_PASSWORD' env variable")
+		return fmt.Errorf("must set 'TF_VAR_vsphere_esxi_ssh_password' env variable")
 	}
 	if sshPort == "" {
 		sshPort = "22"

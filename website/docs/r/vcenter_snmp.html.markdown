@@ -77,4 +77,4 @@ terraform import vsphere_vcenter_snmp.vcenter tf-vcenter-snmp
 
 The above would import snmp configuration for vcenter host
 
-~> **NOTE:** Must set `TF_VAR_VSPHERE_VCENTER_SSH_USER` and `TF_VAR_VSPHERE_VCENTER_SSH_PASSWORD` env variables to import.  Optionally can set `TF_VAR_VSPHERE_VCENTER_SSH_PORT`, `TF_VAR_VSPHERE_VCENTER_SSH_TIMEOUT` and `TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH`
+~> **NOTE:** Must set `TF_VAR_vsphere_vcenter_ssh_user` and `TF_VAR_vsphere_vcenter_ssh_password` env variables to import.  Optionally can set `TF_VAR_vsphere_center_ssh_port`, `TF_VAR_vsphere_vcenter_ssh_timeout` and `TF_VAR_vsphere_ssh_known_hosts_path`
