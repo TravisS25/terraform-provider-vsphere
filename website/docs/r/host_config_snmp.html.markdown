@@ -76,7 +76,7 @@ The following arguments are supported:
 * `known_hosts_path` - (Optional) File path to 'known_hosts' file that must contain the hostname of esxi host.  This is used to verify a host against their current public ssh key.  Must be full path
 * `ssh_port` - (Optional) The port of esxi host to connect to through ssh
 * `ssh_timeout` - (Optional) Number in seconds it should take to establish connection before timing out
-* `engine_id` - (Required) Sets SNMPv3 engine id
+* `engine_id` - (Required) A unique identifier used for SNMP communication within vmware environments.  We can think of this as like a mac address for snmp that we can set.  Must be at least 10 to 32 hexadecimal characters
 * `authentication_protocol` - (Optional) Protocol used ensure the identity of users of SNMP v3
 * `privacy_protocol` - (Optional) Protocol used to allow encryption of SNMP v3 messages
 * `log_level` - (Optional) Log level the host snmp agent will output
