@@ -53,7 +53,7 @@ The following arguments are supported:
         * `TCP`
         * `RELP`
         * `UDP`
-    * `port` - (Required) Port of server to forward requests to
+    * `port` - (Optional/Default: 514) Port of server to forward requests to
 
 ~> **NOTE:** Only a total of 3 servers can be set
 
