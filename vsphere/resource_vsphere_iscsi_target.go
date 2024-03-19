@@ -95,13 +95,13 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	sendTargets := d.Get("dynamic_target").(*schema.Set).List()
-	hbaSendTargets := make([]types.HostInternetScsiHbaSendTarget, 0, len(sendTargets))
+	dynamicTargets := d.Get("dynamic_target").(*schema.Set).List()
+	hbaDynamicTargets := make([]types.HostInternetScsiHbaSendTarget, 0, len(dynamicTargets))
 
-	for _, v := range sendTargets {
-		sendTarget := v.(map[string]interface{})
-		outgoingCreds := iscsi.ExtractChapCredsFromTarget(sendTarget, true)
-		incomingCreds := iscsi.ExtractChapCredsFromTarget(sendTarget, false)
+	for _, v := range dynamicTargets {
+		dynamicTarget := v.(map[string]interface{})
+		outgoingCreds := iscsi.ExtractChapCredsFromTarget(dynamicTarget, true)
+		incomingCreds := iscsi.ExtractChapCredsFromTarget(dynamicTarget, false)
 		authSettings := &types.HostInternetScsiHbaAuthenticationProperties{}
 
 		if len(outgoingCreds["username"].(string)) > 0 {
@@ -118,20 +118,20 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 			authSettings.MutualChapAuthenticationType = string(types.HostInternetScsiHbaChapAuthenticationTypeChapRequired)
 		}
 
-		hbaSendTargets = append(hbaSendTargets, types.HostInternetScsiHbaSendTarget{
-			Address:                  sendTarget["ip"].(string),
-			Port:                     int32(sendTarget["port"].(int)),
+		hbaDynamicTargets = append(hbaDynamicTargets, types.HostInternetScsiHbaSendTarget{
+			Address:                  dynamicTarget["ip"].(string),
+			Port:                     int32(dynamicTarget["port"].(int)),
 			AuthenticationProperties: authSettings,
 		})
 	}
 
-	if len(hbaSendTargets) > 0 {
-		if err = iscsi.AddInternetScsiSendTargets(
+	if len(hbaDynamicTargets) > 0 {
+		if err = iscsi.AddInternetScsiDynamicTargets(
 			client,
 			host.Name(),
 			adapterID,
 			hssProps,
-			hbaSendTargets,
+			hbaDynamicTargets,
 		); err != nil {
 			return err
 		}
@@ -262,7 +262,7 @@ func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) 
 		}
 
 		if len(hbaRemoveTargets) > 0 {
-			if err = iscsi.RemoveInternetScsiSendTargets(
+			if err = iscsi.RemoveInternetScsiDynamicTargets(
 				client,
 				host.Name(),
 				adapterID,
@@ -274,7 +274,7 @@ func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) 
 		}
 
 		if len(hbaAddTargets) > 0 {
-			if err = iscsi.AddInternetScsiSendTargets(
+			if err = iscsi.AddInternetScsiDynamicTargets(
 				client,
 				host.Name(),
 				adapterID,
@@ -380,15 +380,15 @@ func resourceVSphereIscsiTargetDelete(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	sendTargets := d.Get("dynamic_target").(*schema.Set).List()
+	dynamicTargets := d.Get("dynamic_target").(*schema.Set).List()
 	staticTargets := d.Get("static_target").(*schema.Set).List()
 
-	removeSendTargets := make([]types.HostInternetScsiHbaSendTarget, 0, len(sendTargets))
+	removeDynamicTargets := make([]types.HostInternetScsiHbaSendTarget, 0, len(dynamicTargets))
 	removeStaticTargets := make([]types.HostInternetScsiHbaStaticTarget, 0, len(staticTargets))
 
-	for _, sendTarget := range sendTargets {
-		target := sendTarget.(map[string]interface{})
-		removeSendTargets = append(removeSendTargets, types.HostInternetScsiHbaSendTarget{
+	for _, dynamicTarget := range dynamicTargets {
+		target := dynamicTarget.(map[string]interface{})
+		removeDynamicTargets = append(removeDynamicTargets, types.HostInternetScsiHbaSendTarget{
 			Address: target["ip"].(string),
 			Port:    int32(target["port"].(int)),
 		})
@@ -403,13 +403,13 @@ func resourceVSphereIscsiTargetDelete(d *schema.ResourceData, meta interface{}) 
 		})
 	}
 
-	if len(removeSendTargets) > 0 {
-		if err = iscsi.RemoveInternetScsiSendTargets(
+	if len(removeDynamicTargets) > 0 {
+		if err = iscsi.RemoveInternetScsiDynamicTargets(
 			client,
 			host.Name(),
 			adapterID,
 			hssProps,
-			removeSendTargets,
+			removeDynamicTargets,
 		); err != nil {
 			return err
 		}
@@ -494,9 +494,9 @@ func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.Resourc
 	}
 
 	staticTargets, staticOk := d.GetOk("static_target")
-	sendTargets, sendOK := d.GetOk("dynamic_target")
+	dynamicTargets, dynamicOk := d.GetOk("dynamic_target")
 
-	if !staticOk && !sendOK {
+	if !staticOk && !dynamicOk {
 		return fmt.Errorf("must set at least one 'dynamic_target' or 'static_target' attribute")
 	}
 
@@ -520,11 +520,11 @@ func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.Resourc
 		}
 	}
 
-	if sendOK {
+	if dynamicOk {
 		dupMap := map[string]struct{}{}
 		strFmt := "%s:%s"
 
-		for _, v := range sendTargets.(*schema.Set).List() {
+		for _, v := range dynamicTargets.(*schema.Set).List() {
 			st := v.(map[string]interface{})
 
 			if _, ok := dupMap[fmt.Sprintf(strFmt, st["ip"], st["port"])]; ok {
@@ -554,23 +554,23 @@ func iscsiTargetRead(client *govmomi.Client, d *schema.ResourceData, host *objec
 	}
 
 	adapter := baseAdapter.(*types.HostInternetScsiHba)
-	sendTargets := make([]interface{}, 0, len(adapter.ConfiguredSendTarget))
+	dynamicTargets := make([]interface{}, 0, len(adapter.ConfiguredSendTarget))
 	staticTargets := make([]interface{}, 0, len(adapter.ConfiguredStaticTarget))
 
-	for _, sendTarget := range adapter.ConfiguredSendTarget {
+	for _, dynamicTarget := range adapter.ConfiguredSendTarget {
 		target := map[string]interface{}{
-			"ip":   sendTarget.Address,
-			"port": sendTarget.Port,
+			"ip":   dynamicTarget.Address,
+			"port": dynamicTarget.Port,
 		}
 
 		if isRead {
-			currentSendTargets := d.Get("dynamic_target").(*schema.Set).List()
-			for _, v := range currentSendTargets {
-				currentSendTarget := v.(map[string]interface{})
+			currentDynamicTargets := d.Get("dynamic_target").(*schema.Set).List()
+			for _, v := range currentDynamicTargets {
+				currentDynamicTarget := v.(map[string]interface{})
 
-				if currentSendTarget["ip"].(string) == target["ip"].(string) &&
-					int32(currentSendTarget["port"].(int)) == target["port"].(int32) {
-					target["chap"] = currentSendTarget["chap"]
+				if currentDynamicTarget["ip"].(string) == target["ip"].(string) &&
+					int32(currentDynamicTarget["port"].(int)) == target["port"].(int32) {
+					target["chap"] = currentDynamicTarget["chap"]
 				}
 			}
 		} else {
@@ -578,21 +578,21 @@ func iscsiTargetRead(client *govmomi.Client, d *schema.ResourceData, host *objec
 				map[string]interface{}{
 					"outgoing_creds": []interface{}{
 						map[string]interface{}{
-							"username": sendTarget.AuthenticationProperties.ChapName,
-							"password": sendTarget.AuthenticationProperties.ChapSecret,
+							"username": dynamicTarget.AuthenticationProperties.ChapName,
+							"password": dynamicTarget.AuthenticationProperties.ChapSecret,
 						},
 					},
 					"incoming_creds": []interface{}{
 						map[string]interface{}{
-							"username": sendTarget.AuthenticationProperties.MutualChapName,
-							"password": sendTarget.AuthenticationProperties.MutualChapSecret,
+							"username": dynamicTarget.AuthenticationProperties.MutualChapName,
+							"password": dynamicTarget.AuthenticationProperties.MutualChapSecret,
 						},
 					},
 				},
 			}
 		}
 
-		sendTargets = append(sendTargets, target)
+		dynamicTargets = append(dynamicTargets, target)
 	}
 
 	for _, staticTarget := range adapter.ConfiguredStaticTarget {
@@ -637,7 +637,7 @@ func iscsiTargetRead(client *govmomi.Client, d *schema.ResourceData, host *objec
 	}
 
 	d.Set("adapter_id", adapterID)
-	d.Set("dynamic_target", sendTargets)
+	d.Set("dynamic_target", dynamicTargets)
 	d.Set("static_target", staticTargets)
 
 	return nil
