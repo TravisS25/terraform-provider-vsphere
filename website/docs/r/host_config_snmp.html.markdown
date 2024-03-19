@@ -79,7 +79,11 @@ The following arguments are supported:
 * `engine_id` - (Required) A unique identifier used for SNMP communication within vmware environments.  We can think of this as like a mac address for snmp that we can set.  Must be at least 10 to 32 hexadecimal characters
 * `authentication_protocol` - (Optional) Protocol used ensure the identity of users of SNMP v3
 * `privacy_protocol` - (Optional) Protocol used to allow encryption of SNMP v3 messages
-* `log_level` - (Optional) Log level the host snmp agent will output
+* `log_level` - (Optional) Log level the host snmp agent will output.  Options are:
+  * `info`
+  * `warning`
+  * `debug`
+  * `error`
 * `remote_user` (Optional):
     * `name` - (Required) Name of user
     * `authentication_password` - (Optional) Password of remote user

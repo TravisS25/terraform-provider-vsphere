@@ -59,6 +59,10 @@ The following arguments are supported:
 * `authentication_protocol` - Protocol used ensure the identity of users of SNMP v3
 * `privacy_protocol` - Protocol used to allow encryption of SNMP v3 messages
 * `log_level` - Log level the host snmp agent will output
+  * `info`
+  * `warning`
+  * `debug`
+  * `error`
 * `remote_user`:
     * `name`: Name of user
 * `snmp_port` - Port for the agent listen on
