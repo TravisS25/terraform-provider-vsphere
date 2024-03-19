@@ -7,6 +7,7 @@ IMPROVEMENTS:
 * Added ability to import license into `resource/vsphere_license` resource
 * Updated the `service` attribute of `resource/vsphere_host_service_state` resource to use set type
 * Removed unused parameter from vnic function
+* Changed `port` attribute in `vsphere_vcenter_syslog` to be optional with default of `514`
 
 BUG FIXES:
 * Fixed where `resource/vsphere_nas_datastore` was self deleting on every apply
