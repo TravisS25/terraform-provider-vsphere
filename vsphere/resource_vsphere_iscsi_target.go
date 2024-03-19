@@ -45,7 +45,7 @@ func resourceVSphereIscsiTarget() *schema.Resource {
 				ForceNew:    true,
 				Description: "Iscsi adapter the iscsi targets will be added to.  This should be in the form of 'vmhb<unique_name>'",
 			},
-			"send_target": {
+			"dynamic_target": {
 				Type:     schema.TypeSet,
 				Optional: true,
 				Elem: &schema.Resource{
@@ -95,7 +95,7 @@ func resourceVSphereIscsiTargetCreate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	sendTargets := d.Get("send_target").(*schema.Set).List()
+	sendTargets := d.Get("dynamic_target").(*schema.Set).List()
 	hbaSendTargets := make([]types.HostInternetScsiHbaSendTarget, 0, len(sendTargets))
 
 	for _, v := range sendTargets {
@@ -216,8 +216,8 @@ func resourceVSphereIscsiTargetUpdate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	if d.HasChange("send_target") {
-		oldVal, newVal := d.GetChange("send_target")
+	if d.HasChange("dynamic_target") {
+		oldVal, newVal := d.GetChange("dynamic_target")
 		oldList := oldVal.(*schema.Set).List()
 		newList := newVal.(*schema.Set).List()
 
@@ -380,7 +380,7 @@ func resourceVSphereIscsiTargetDelete(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	sendTargets := d.Get("send_target").(*schema.Set).List()
+	sendTargets := d.Get("dynamic_target").(*schema.Set).List()
 	staticTargets := d.Get("static_target").(*schema.Set).List()
 
 	removeSendTargets := make([]types.HostInternetScsiHbaSendTarget, 0, len(sendTargets))
@@ -494,10 +494,10 @@ func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.Resourc
 	}
 
 	staticTargets, staticOk := d.GetOk("static_target")
-	sendTargets, sendOK := d.GetOk("send_target")
+	sendTargets, sendOK := d.GetOk("dynamic_target")
 
 	if !staticOk && !sendOK {
-		return fmt.Errorf("must set at least one 'send_target' or 'static_target' attribute")
+		return fmt.Errorf("must set at least one 'dynamic_target' or 'static_target' attribute")
 	}
 
 	if staticOk {
@@ -529,7 +529,7 @@ func resourceVSphereIscsiTargetCustomDiff(ctx context.Context, d *schema.Resourc
 
 			if _, ok := dupMap[fmt.Sprintf(strFmt, st["ip"], st["port"])]; ok {
 				return fmt.Errorf(
-					"duplicate ip and port found for send target;  ip: %s, port: %d",
+					"duplicate ip and port found for dynamic target;  ip: %s, port: %d",
 					st["ip"],
 					st["port"],
 				)
@@ -564,7 +564,7 @@ func iscsiTargetRead(client *govmomi.Client, d *schema.ResourceData, host *objec
 		}
 
 		if isRead {
-			currentSendTargets := d.Get("send_target").(*schema.Set).List()
+			currentSendTargets := d.Get("dynamic_target").(*schema.Set).List()
 			for _, v := range currentSendTargets {
 				currentSendTarget := v.(map[string]interface{})
 
@@ -637,7 +637,7 @@ func iscsiTargetRead(client *govmomi.Client, d *schema.ResourceData, host *objec
 	}
 
 	d.Set("adapter_id", adapterID)
-	d.Set("send_target", sendTargets)
+	d.Set("dynamic_target", sendTargets)
 	d.Set("static_target", staticTargets)
 
 	return nil

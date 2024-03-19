@@ -40,6 +40,6 @@ The following arguments are supported:
   * `ip` - The ip of the static target
   * `port` - The port of the static target
   * `name` - The iqn name of the static target
-* `send_target` - The set of resource send targets for given host and adapter id
-  * `ip` - The ip of the send target
-  * `port` - The port of the send target
+* `dynamic_target` - The set of resource send targets for given host and adapter id
+  * `ip` - The ip of the dynamic target
+  * `port` - The port of the dynamic target

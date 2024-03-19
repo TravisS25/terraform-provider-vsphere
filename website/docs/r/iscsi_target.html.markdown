@@ -29,11 +29,11 @@ resource "vsphere_iscsi_target" "host" {
     port = 3260
     name = "iqn.test_name_2"
   }
-  send_target{
+  dynamic_target{
     ip = "172.17.0.1"
     port = 3260
   }
-  send_target{
+  dynamic_target{
     ip = "172.17.0.2"
     port = 3260
   }
@@ -56,11 +56,11 @@ resource "vsphere_iscsi_target" "host" {
     port = 3260
     name = "iqn.test_name_2"
   }
-  send_target{
+  dynamic_target{
     ip = "172.17.0.1"
     port = 3260
   }
-  send_target{
+  dynamic_target{
     ip = "172.17.0.2"
     port = 3260
   }
@@ -78,11 +78,11 @@ The following arguments are supported:
   * `ip` - The ip to set for static target
   * `port` - (Default: 3260) The port to set static target
   * `name` - The iqn name to set static target
-* `send_target` - (Required/Optional) The set of resource send targets for given host and adapter id
-  * `ip` - The ip to set for send target
-  * `port` - The port to set for send target
+* `dynamic_target` - (Required/Optional) The set of resource send targets for given host and adapter id
+  * `ip` - The ip to set for dynamic target
+  * `port` - (Default: 3260) The port to set for dynamic target
 
-~> **NOTE:** At least one `static_target` or `send_target` must be set
+~> **NOTE:** At least one `static_target` or `dynamic_target` must be set
 
 ~> **NOTE:** Must choose either `host_system_id` or `hostname` but not both
 

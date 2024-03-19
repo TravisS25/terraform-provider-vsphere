@@ -147,7 +147,7 @@ func testAccVSphereIscsiTargetValidation(resourceName, staticTargetIP, sendTarge
 
 		if adapter.ConfiguredSendTarget[0].Address != sendTargetIP {
 			return fmt.Errorf(
-				"invalid ip for send target.  expected '%s'; got '%s'",
+				"invalid ip for dynamic target.  expected '%s'; got '%s'",
 				sendTargetIP,
 				adapter.ConfiguredSendTarget[0].Address,
 			)
@@ -225,7 +225,7 @@ func testAccResourceVSphereIscsiTargetConfig(staticTargetIP, sendTargetIP string
 				}
 			}
 		}
-		send_target{
+		dynamic_target{
 			ip = "%s"
 			chap {
 				outgoing_creds {
