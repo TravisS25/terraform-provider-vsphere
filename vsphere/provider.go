@@ -197,6 +197,7 @@ func Provider() *schema.Provider {
 			"vsphere_host_list":                  dataSourceVSphereHostList(),
 			"vsphere_host_config_snmp":           dataSourceVSphereHostConfigSNMP(),
 			"vsphere_vcenter_snmp":               dataSourceVSphereVcenterSNMP(),
+			"vsphere_vnic_list":                  dataSourceVSphereVnicList(),
 		},
 
 		ConfigureFunc: providerConfigure,
