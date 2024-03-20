@@ -41,3 +41,12 @@ The following attributes are exported:
 * `total` - Total number of units (example: CPUs) contained in the license.
 * `used` - The number of units (example: CPUs) assigned to this license.
 * `name` - The display name for the license.
+
+## Importing
+
+An existing license can be imported into a resource by supplying the license key. An example is below:
+
+
+```
+terraform import vsphere_license.licenseKey <license_key>
+```
