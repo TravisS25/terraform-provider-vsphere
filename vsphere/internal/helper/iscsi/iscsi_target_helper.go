@@ -113,9 +113,9 @@ func RemoveInternetScsiStaticTargets(
 	return nil
 }
 
-// AddInternetScsiSendTargets adds given send targets to given host and adapter id
+// AddInternetScsiDynamicTargets adds given send targets to given host and adapter id
 // with timeout
-func AddInternetScsiSendTargets(
+func AddInternetScsiDynamicTargets(
 	client *govmomi.Client,
 	hostname,
 	adapterID string,
@@ -143,9 +143,9 @@ func AddInternetScsiSendTargets(
 	return nil
 }
 
-// RemoveInternetScsiSendTargets removes given send targets from given host and adapter id
+// RemoveInternetScsiDynamicTargets removes given send targets from given host and adapter id
 // with timeout
-func RemoveInternetScsiSendTargets(
+func RemoveInternetScsiDynamicTargets(
 	client *govmomi.Client,
 	hostname,
 	adapterID string,

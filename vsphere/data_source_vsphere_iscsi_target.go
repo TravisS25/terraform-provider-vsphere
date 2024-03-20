@@ -32,7 +32,7 @@ func dataSourceVSphereIscsiTarget() *schema.Resource {
 				Description: "The iscsi adapter id of the host",
 				Required:    true,
 			},
-			"send_target": {
+			"dynamic_target": {
 				Type:     schema.TypeSet,
 				Computed: true,
 				Elem: &schema.Resource{
@@ -73,10 +73,7 @@ func dataSourceVSphereIscsiTargetRead(d *schema.ResourceData, meta interface{}) 
 	if err = iscsiTargetRead(client, d, host, adapterID, true); err != nil {
 		return fmt.Errorf("error reading iscsi target properties on data source read for host '%s': %s", host.Name(), err)
 	}
-	if err != nil {
-		return err
-	}
 
-	d.SetId(fmt.Sprintf("%s:%s", hr.IDName, adapterID))
+	d.SetId(fmt.Sprintf("%s:%s", hr.Value, adapterID))
 	return nil
 }

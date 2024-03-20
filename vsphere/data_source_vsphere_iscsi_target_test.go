@@ -53,7 +53,7 @@ func testAccDataSourceVSphereIscsiTargetConfig() string {
 			host_system_id = data.vsphere_host.roothost1.id
 			adapter_id = "%s"
 
-			send_target{
+			dynamic_target{
 				ip = "172.16.0.1"
 			}
 		}
