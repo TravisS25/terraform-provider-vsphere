@@ -76,10 +76,14 @@ The following arguments are supported:
 * `known_hosts_path` - (Optional) File path to 'known_hosts' file that must contain the hostname of esxi host.  This is used to verify a host against their current public ssh key.  Must be full path
 * `ssh_port` - (Optional) The port of esxi host to connect to through ssh
 * `ssh_timeout` - (Optional) Number in seconds it should take to establish connection before timing out
-* `engine_id` - (Required) Sets SNMPv3 engine id
+* `engine_id` - (Required) A unique identifier used for SNMP communication within vmware environments.  We can think of this as like a mac address for snmp that we can set.  Must be at least 10 to 32 hexadecimal characters
 * `authentication_protocol` - (Optional) Protocol used ensure the identity of users of SNMP v3
 * `privacy_protocol` - (Optional) Protocol used to allow encryption of SNMP v3 messages
-* `log_level` - (Optional) Log level the host snmp agent will output
+* `log_level` - (Optional) Log level the host snmp agent will output.  Options are:
+  * `info`
+  * `warning`
+  * `debug`
+  * `error`
 * `remote_user` (Optional):
     * `name` - (Required) Name of user
     * `authentication_password` - (Optional) Password of remote user
@@ -115,4 +119,4 @@ terraform import vsphere_host_config_snmp.host host.example.com
 
 The above would import snmp configuration for host with hostname `host.example.com`
 
-~> **NOTE:** Must set `TF_VAR_VSPHERE_ESXI_SSH_USER` and `TF_VAR_VSPHERE_ESXI_SSH_PASSWORD` env variables to import. Optionally can set `TF_VAR_VSPHERE_ESXI_SSH_PORT`, `TF_VAR_VSPHERE_ESXI_SSH_TIMEOUT` and `TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH`
+~> **NOTE:** Must set `TF_VAR_vsphere_esxi_ssh_user` and `TF_VAR_vsphere_esxi_ssh_password` env variables to import. Optionally can set `TF_VAR_vsphere_esxi_ssh_port`, `TF_VAR_vsphere_esxi_ssh_timeout` and `TF_VAR_vsphere_ssh_known_hosts_path`

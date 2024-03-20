@@ -28,9 +28,9 @@ func TestAccResourceVSphereHostConfigSNMP_basic(t *testing.T) {
 			"TF_VAR_VSPHERE_DATACENTER",
 			"TF_VAR_VSPHERE_CLUSTER",
 			"TF_VAR_VSPHERE_ESXI1",
-			"TF_VAR_VSPHERE_ESXI_SSH_USER",
-			"TF_VAR_VSPHERE_ESXI_SSH_PASSWORD",
-			"TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH",
+			"TF_VAR_vsphere_esxi_ssh_user",
+			"TF_VAR_vsphere_esxi_ssh_password",
+			"TF_VAR_vsphere_ssh_known_hosts_path",
 		},
 	)
 
@@ -39,7 +39,7 @@ func TestAccResourceVSphereHostConfigSNMP_basic(t *testing.T) {
 	newCommunity := "new_public"
 
 	_, err := os.OpenFile(
-		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path"),
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
 		os.ModePerm,
 	)
@@ -48,7 +48,7 @@ func TestAccResourceVSphereHostConfigSNMP_basic(t *testing.T) {
 	}
 
 	if _, err = esxissh.GetKnownHostsOutput(
-		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path"),
 		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
 	); err != nil && err == esxissh.ErrHostNotFound {
 		runKeyScanCommand(t, os.Getenv("TF_VAR_VSPHERE_ESXI1"))
@@ -90,9 +90,9 @@ func TestAccResourceVSphereHostConfigSNMP_hostname(t *testing.T) {
 			"TF_VAR_VSPHERE_DATACENTER",
 			"TF_VAR_VSPHERE_CLUSTER",
 			"TF_VAR_VSPHERE_ESXI1",
-			"TF_VAR_VSPHERE_ESXI_SSH_USER",
-			"TF_VAR_VSPHERE_ESXI_SSH_PASSWORD",
-			"TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH",
+			"TF_VAR_vsphere_esxi_ssh_user",
+			"TF_VAR_vsphere_esxi_ssh_password",
+			"TF_VAR_vsphere_ssh_known_hosts_path",
 		},
 	)
 
@@ -101,7 +101,7 @@ func TestAccResourceVSphereHostConfigSNMP_hostname(t *testing.T) {
 	newCommunity := "new_public"
 
 	_, err := os.OpenFile(
-		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path"),
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
 		os.ModePerm,
 	)
@@ -110,7 +110,7 @@ func TestAccResourceVSphereHostConfigSNMP_hostname(t *testing.T) {
 	}
 
 	if _, err = esxissh.GetKnownHostsOutput(
-		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path"),
 		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
 	); err != nil && err == esxissh.ErrHostNotFound {
 		runKeyScanCommand(t, os.Getenv("TF_VAR_VSPHERE_ESXI1"))
@@ -282,9 +282,9 @@ func testAccResourceVSphereHostConfigSNMPConfig(community string, useHostname bo
 				testhelper.ConfigDataRootHost1(),
 			),
 			"hostname = data.vsphere_host.roothost1.name",
-			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
-			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
-			os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+			os.Getenv("TF_VAR_vsphere_esxi_ssh_user"),
+			os.Getenv("TF_VAR_vsphere_esxi_ssh_password"),
+			os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path"),
 			community,
 		)
 	}
@@ -297,9 +297,9 @@ func testAccResourceVSphereHostConfigSNMPConfig(community string, useHostname bo
 			testhelper.ConfigDataRootHost1(),
 		),
 		"host_system_id = data.vsphere_host.roothost1.id",
-		os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
-		os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
-		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.Getenv("TF_VAR_vsphere_esxi_ssh_user"),
+		os.Getenv("TF_VAR_vsphere_esxi_ssh_password"),
+		os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path"),
 		community,
 	)
 }
@@ -311,24 +311,24 @@ func getTestCommandOutput(id string) (*bytes.Buffer, error) {
 		return nil, fmt.Errorf("error retrieving host for 'vsphere_host_config_snmp' on delete test: %s", err)
 	}
 
-	sshPort := os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PORT")
+	sshPort := os.Getenv("TF_VAR_vsphere_esxi_ssh_port")
 	if sshPort == "" {
 		sshPort = "22"
 	}
 
-	sshTimeout := os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_TIMEOUT")
+	sshTimeout := os.Getenv("TF_VAR_vsphere_esxi_ssh_timeout")
 	if sshTimeout == "" {
 		sshTimeout = "8"
 	}
 
 	port, err := strconv.Atoi(sshPort)
 	if err != nil {
-		return nil, fmt.Errorf("'TF_VAR_VSPHERE_ESXI_SSH_PORT' env variable should be integer")
+		return nil, fmt.Errorf("'TF_VAR_vsphere_esxi_ssh_port' env variable should be integer")
 	}
 
 	timeout, err := strconv.Atoi(sshTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("'TF_VAR_VSPHERE_ESXI_SSH_TIMEOUT' env variable should be integer")
+		return nil, fmt.Errorf("'TF_VAR_vsphere_esxi_ssh_timeout' env variable should be integer")
 	}
 
 	result, err := esxissh.RunCommand(
@@ -336,8 +336,8 @@ func getTestCommandOutput(id string) (*bytes.Buffer, error) {
 		host.Name(),
 		port,
 		esxissh.GetDefaultClientConfig(
-			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
-			os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
+			os.Getenv("TF_VAR_vsphere_esxi_ssh_user"),
+			os.Getenv("TF_VAR_vsphere_esxi_ssh_password"),
 			timeout,
 			ssh.InsecureIgnoreHostKey(),
 		),
@@ -360,7 +360,7 @@ func runKeyScanCommand(t *testing.T, hostname string) {
 	cmd := exec.Command(
 		"sh",
 		"-c",
-		fmt.Sprintf("ssh-keyscan -H %s >> %s", hostname, os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH")),
+		fmt.Sprintf("ssh-keyscan -H %s >> %s", hostname, os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path")),
 	)
 	cmd.Stdout = stdOut
 	cmd.Stderr = stdErr

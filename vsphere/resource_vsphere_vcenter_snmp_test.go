@@ -20,9 +20,9 @@ func TestAccResourceVSphereVcenterSNMP_basic(t *testing.T) {
 	testAccCheckEnvVariablesF(
 		t,
 		[]string{
-			"TF_VAR_VSPHERE_VCENTER_SSH_USER",
-			"TF_VAR_VSPHERE_VCENTER_SSH_PASSWORD",
-			"TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH",
+			"TF_VAR_vsphere_vcenter_ssh_user",
+			"TF_VAR_vsphere_vcenter_ssh_password",
+			"TF_VAR_vsphere_ssh_known_hosts_path",
 		},
 	)
 
@@ -31,7 +31,7 @@ func TestAccResourceVSphereVcenterSNMP_basic(t *testing.T) {
 	newCommunity := "new_public"
 
 	_, err := os.OpenFile(
-		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path"),
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
 		os.ModePerm,
 	)
@@ -40,7 +40,7 @@ func TestAccResourceVSphereVcenterSNMP_basic(t *testing.T) {
 	}
 
 	if _, err = esxissh.GetKnownHostsOutput(
-		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path"),
 		os.Getenv("VSPHERE_SERVER"),
 	); err != nil && err == esxissh.ErrHostNotFound {
 		runKeyScanCommand(t, os.Getenv("VSPHERE_SERVER"))
@@ -165,9 +165,9 @@ func testAccResourceVSphereVcenterSNMPConfig(community string) string {
 			testhelper.ConfigDataRootComputeCluster1(),
 			testhelper.ConfigDataRootHost1(),
 		),
-		os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_USER"),
-		os.Getenv("TF_VAR_VSPHERE_ESXI_SSH_PASSWORD"),
-		os.Getenv("TF_VAR_VSPHERE_SSH_KNOWN_HOSTS_PATH"),
+		os.Getenv("TF_VAR_vsphere_esxi_ssh_user"),
+		os.Getenv("TF_VAR_vsphere_esxi_ssh_password"),
+		os.Getenv("TF_VAR_vsphere_ssh_known_hosts_path"),
 		community,
 	)
 }
