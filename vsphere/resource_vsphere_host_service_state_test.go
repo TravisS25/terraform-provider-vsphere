@@ -119,10 +119,6 @@ func testAccResourceVSphereTwoHostServiceStateConfig(policy types.HostServicePol
 		`
 	%s
 
-	%s
-
-	%s
-
 	resource "vsphere_host_service_state" "h1" {
 		host_system_id = data.vsphere_host.roothost1.id
 		service {
@@ -135,9 +131,11 @@ func testAccResourceVSphereTwoHostServiceStateConfig(policy types.HostServicePol
 		}
 	}
 	`,
-		testhelper.ConfigDataRootDC1(),
-		testhelper.ConfigDataRootComputeCluster1(),
-		testhelper.ConfigDataRootHost1(),
+		testhelper.CombineConfigs(
+			testhelper.ConfigDataRootDC1(),
+			testhelper.ConfigDataRootComputeCluster1(),
+			testhelper.ConfigDataRootHost1(),
+		),
 		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_1"),
 		policy,
 		os.Getenv("TF_VAR_VSPHERE_SERVICE_KEY_2"),
