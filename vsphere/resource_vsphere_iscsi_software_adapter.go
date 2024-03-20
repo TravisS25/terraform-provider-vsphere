@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/iscsi"
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/object"
 )
 
 func resourceVSphereIscsiSoftwareAdapter() *schema.Resource {
@@ -103,7 +105,13 @@ func resourceVSphereIscsiSoftwareAdapterCreate(d *schema.ResourceData, meta inte
 }
 
 func resourceVSphereIscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}) error {
-	return iscsiSoftwareAdapterRead(d, meta, false)
+	client := meta.(*Client).vimClient
+	host, _, err := hostsystem.FromHostnameOrID(client, d)
+	if err != nil {
+		return fmt.Errorf("error retrieving host for iscsi read: %s", err)
+	}
+
+	return iscsiSoftwareAdapterRead(client, d, host, false)
 }
 
 func resourceVSphereIscsiSoftwareAdapterUpdate(d *schema.ResourceData, meta interface{}) error {
@@ -193,13 +201,7 @@ func resourceVSphereIscsiSoftwareAdapterImport(ctx context.Context, d *schema.Re
 	return []*schema.ResourceData{d}, nil
 }
 
-func iscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}, isDataSource bool) error {
-	client := meta.(*Client).vimClient
-	host, _, err := hostsystem.FromHostnameOrID(client, d)
-	if err != nil {
-		return fmt.Errorf("error retrieving host for iscsi read: %s", err)
-	}
-
+func iscsiSoftwareAdapterRead(client *govmomi.Client, d *schema.ResourceData, host *object.HostSystem, isDataSource bool) error {
 	hssProps, err := hostsystem.GetHostStorageSystemPropertiesFromHost(client, host)
 	if err != nil {
 		return err
@@ -212,6 +214,7 @@ func iscsiSoftwareAdapterRead(d *schema.ResourceData, meta interface{}, isDataSo
 		}
 
 		d.Set("iscsi_name", adapter.IScsiName)
+		d.Set("adapter_id", adapter.Device)
 	} else if isDataSource {
 		return fmt.Errorf("iscsi software adapter is not enabled for host '%s'", host.Name())
 	}
