@@ -40,7 +40,8 @@ func resourceVSphereVcenterSyslog() *schema.Resource {
 						},
 						"port": {
 							Type:        schema.TypeInt,
-							Required:    true,
+							Optional:    true,
+							Default:     514,
 							Description: "Port of host to forward logs to",
 						},
 						"protocol": {
