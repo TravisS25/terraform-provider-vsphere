@@ -157,7 +157,14 @@ func resourceVSphereComputeCluster() *schema.Resource {
 				MaxItems:      64,
 				Description:   "The managed object IDs of the hosts to put in the cluster.",
 				Elem:          &schema.Schema{Type: schema.TypeString},
-				ConflictsWith: []string{"host_managed", "hostnames"},
+				ConflictsWith: []string{"host_managed", "hostnames", "use_hostnames"},
+			},
+			"use_hostnames": {
+				Type:          schema.TypeBool,
+				Optional:      true,
+				Default:       false,
+				Description:   "Determines whether to use hostnames for connecting hosts to cluster",
+				ConflictsWith: []string{"host_system_ids"},
 			},
 			"hostnames": {
 				Type:          schema.TypeSet,
@@ -754,8 +761,22 @@ func resourceVSphereComputeClusterDelete(d *schema.ResourceData, meta interface{
 }
 
 func resourceVSphereComputeClusterImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
-	p := d.Id()
-	cluster, err := resourceVSphereComputeClusterGetClusterFromPath(meta, p, "")
+	idArr := strings.Split(d.Id(), ":")
+	errMsg := "invalid import for cluster %q.  Format should be <path_to_cluster> or <path_to_cluster>:use_hostnames"
+
+	if len(idArr) > 2 {
+		return nil, fmt.Errorf(errMsg, idArr[0])
+	}
+
+	if len(idArr) == 2 {
+		if idArr[1] != "use_hostnames" {
+			return nil, fmt.Errorf(errMsg, idArr[0])
+		}
+
+		d.Set("use_hostnames", true)
+	}
+
+	cluster, err := resourceVSphereComputeClusterGetClusterFromPath(meta, idArr[0], "")
 	if err != nil {
 		return nil, fmt.Errorf("error loading cluster: %s", err)
 	}
@@ -870,7 +891,7 @@ func resourceVSphereComputeClusterProcessHostUpdate(
 
 	var o, n interface{}
 
-	if len(d.Get("hostnames").(*schema.Set).List()) > 0 {
+	if d.Get("use_hostnames").(bool) {
 		o, n = d.GetChange("hostnames")
 	} else {
 		o, n = d.GetChange("host_system_ids")
@@ -1263,7 +1284,7 @@ func resourceVSphereComputeClusterDeleteProcessForceRemoveHosts(
 
 	var ids []interface{}
 
-	if len(d.Get("hostnames").(*schema.Set).List()) > 0 {
+	if d.Get("use_hostnames").(bool) {
 		ids = d.Get("hostnames").(*schema.Set).List()
 	} else {
 		ids = d.Get("host_system_ids").(*schema.Set).List()
@@ -1360,7 +1381,7 @@ func resourceVSphereComputeClusterFlattenData(
 	if !d.Get("host_managed").(bool) {
 		hostList := []string{}
 
-		if len(d.Get("hostnames").(*schema.Set).List()) > 0 {
+		if d.Get("use_hostnames").(bool) {
 			for _, host := range props.Host {
 				hs, _, err := hostsystem.CheckIfHostnameOrID(client, host.Value)
 				if err != nil {
