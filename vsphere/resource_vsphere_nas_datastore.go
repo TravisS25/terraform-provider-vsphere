@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/datastore"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/folder"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/vim25/types"
@@ -24,11 +25,17 @@ func resourceVSphereNasDatastore() *schema.Resource {
 			Required:    true,
 		},
 		"host_system_ids": {
+			Type:         schema.TypeSet,
+			Optional:     true,
+			Description:  "The managed object IDs of the hosts to mount the datastore on.",
+			Elem:         &schema.Schema{Type: schema.TypeString},
+			ExactlyOneOf: []string{"hostnames"},
+		},
+		"hostnames": {
 			Type:        schema.TypeSet,
-			Description: "The managed object IDs of the hosts to mount the datastore on.",
+			Optional:    true,
+			Description: "The hostnames of the hosts to mount the datastore on.",
 			Elem:        &schema.Schema{Type: schema.TypeString},
-			MinItems:    1,
-			Required:    true,
 		},
 		"folder": {
 			Type:          schema.TypeString,
@@ -79,7 +86,14 @@ func resourceVSphereNasDatastoreCreate(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	hosts := structure.SliceInterfacesToStrings(d.Get("host_system_ids").(*schema.Set).List())
+	var hosts []string
+
+	if len(d.Get("host_system_ids").(*schema.Set).List()) > 0 {
+		hosts = structure.SliceInterfacesToStrings(d.Get("host_system_ids").(*schema.Set).List())
+	} else {
+		hosts = structure.SliceInterfacesToStrings(d.Get("hostnames").(*schema.Set).List())
+	}
+
 	volSpec, err := expandHostNasVolumeSpec(d)
 	if err != nil {
 		return err
@@ -153,12 +167,30 @@ func resourceVSphereNasDatastoreRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
+	var hostTfID string
+
+	if len(d.Get("host_system_ids").(*schema.Set).List()) > 0 {
+		hostTfID = "host_system_ids"
+	} else {
+		hostTfID = "hostnames"
+	}
+
 	// Update mounted hosts
 	var mountedHosts []string
 	for _, mount := range props.Host {
-		mountedHosts = append(mountedHosts, mount.Key.Value)
+		if hostTfID == "host_system_ids" {
+			mountedHosts = append(mountedHosts, mount.Key.Value)
+		} else {
+			host, _, err := hostsystem.CheckIfHostnameOrID(client, mount.Key.Value)
+			if err != nil {
+				return fmt.Errorf("error finding host for datastore: %s", err)
+			}
+
+			mountedHosts = append(mountedHosts, host.Name())
+		}
 	}
-	if err := d.Set("host_system_ids", mountedHosts); err != nil {
+
+	if err = d.Set(hostTfID, mountedHosts); err != nil {
 		return err
 	}
 
@@ -230,8 +262,16 @@ func resourceVSphereNasDatastoreUpdate(d *schema.ResourceData, meta interface{})
 		}
 	}
 
+	var hostTfID string
+
+	if len(d.Get("host_system_ids").(*schema.Set).List()) > 0 {
+		hostTfID = "host_system_ids"
+	} else {
+		hostTfID = "hostnames"
+	}
+
 	// Process mount/unmount operations.
-	o, n := d.GetChange("host_system_ids")
+	o, n := d.GetChange(hostTfID)
 	volSpec, err := expandHostNasVolumeSpec(d)
 	if err != nil {
 		return err
@@ -264,9 +304,17 @@ func resourceVSphereNasDatastoreDelete(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("cannot find datastore: %s", err)
 	}
 
+	var hostTfID string
+
+	if len(d.Get("host_system_ids").(*schema.Set).List()) > 0 {
+		hostTfID = "host_system_ids"
+	} else {
+		hostTfID = "hostnames"
+	}
+
 	// Unmount the datastore from every host. Once the last host is unmounted we
 	// are done and the datastore will delete itself.
-	hosts := structure.SliceInterfacesToStrings(d.Get("host_system_ids").(*schema.Set).List())
+	hosts := structure.SliceInterfacesToStrings(d.Get(hostTfID).(*schema.Set).List())
 	volSpec, err := expandHostNasVolumeSpec(d)
 	if err != nil {
 		return err

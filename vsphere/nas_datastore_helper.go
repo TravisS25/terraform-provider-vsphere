@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
 	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
@@ -82,18 +81,18 @@ func (p *nasDatastoreMountProcessor) processMountOperations() (*object.Datastore
 		}
 	}
 	for _, hsID := range hosts {
-		dss, err := hostDatastoreSystemFromHostSystemID(p.client, hsID)
+		dss, err := hostDatastoreSystemFromHostnameOrID(p.client, hsID)
 		if err != nil {
-			return p.ds, fmt.Errorf("host %q: %s", hostsystem.NameOrID(p.client, hsID), err)
+			return p.ds, fmt.Errorf("host %q: %s", hsID, err)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout)
 		defer cancel()
 		ds, err := dss.CreateNasDatastore(ctx, *p.volSpec)
 		if err != nil {
-			return p.ds, fmt.Errorf("host %q: %s", hostsystem.NameOrID(p.client, hsID), err)
+			return p.ds, fmt.Errorf("host %q: %s", hsID, err)
 		}
 		if err := p.validateDatastore(ds); err != nil {
-			return p.ds, fmt.Errorf("datastore validation error on host %q: %s", hostsystem.NameOrID(p.client, hsID), err)
+			return p.ds, fmt.Errorf("datastore validation error on host %q: %s", hsID, err)
 		}
 	}
 	return p.ds, nil
@@ -109,12 +108,12 @@ func (p *nasDatastoreMountProcessor) processUnmountOperations() error {
 		return nil
 	}
 	for _, hsID := range hosts {
-		dss, err := hostDatastoreSystemFromHostSystemID(p.client, hsID)
+		dss, err := hostDatastoreSystemFromHostnameOrID(p.client, hsID)
 		if err != nil {
-			return fmt.Errorf("host %q: %s", hostsystem.NameOrID(p.client, hsID), err)
+			return fmt.Errorf("host %q: %s", hsID, err)
 		}
 		if err := removeDatastore(dss, p.ds); err != nil {
-			return fmt.Errorf("host %q: %s", hostsystem.NameOrID(p.client, hsID), err)
+			return fmt.Errorf("host %q: %s", hsID, err)
 		}
 	}
 	return nil
